@@ -4,6 +4,7 @@
 # Secrets
 .env
 .env.*
+AGENTS.md
 
 # Python cache
 __pycache__/
