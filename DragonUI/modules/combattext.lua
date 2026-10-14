@@ -302,13 +302,19 @@ local function OnUpdate(self, elapsed)
         Release(self)
         return
     end
-    -- A slow number is still travelling when it fades; a fast one settles early and holds. The alpha below
-    -- stays on t, so only the drift is rescaled, never the lifetime.
-    local dt = t * (self._driftSpeed or 1)
-    if dt > 1 then dt = 1 end
-    local ease = 1 - (1 - dt) * (1 - dt)   -- fast out, slow in
-    local x = self._sx + (self._dx - self._sx) * ease
-    local y = self._sy + (self._dy - self._sy) * ease
+    -- A crit is pinned to its spawn point: it pulses in size and nothing else. Checking here rather than only
+    -- at spawn means a stale pooled frame cannot carry a drift in from a previous number. y is _sy, not 0:
+    -- the spawn point is anchor + offset, not the anchor itself.
+    local x, y = 0, self._sy or 0
+    if not self._pulse then
+        -- A slow number is still travelling when it fades; a fast one settles early and holds. The alpha below
+        -- stays on t, so only the drift is rescaled, never the lifetime.
+        local dt = t * (self._driftSpeed or 1)
+        if dt > 1 then dt = 1 end
+        local ease = 1 - (1 - dt) * (1 - dt)   -- fast out, slow in
+        x = self._sx + (self._dx - self._sx) * ease
+        y = self._sy + (self._dy - self._sy) * ease
+    end
     if self._pulse then
         -- Ease-out: most of the growth lands in the first frames, then it settles. It ends exactly on the
         -- base size, so there is nothing to overshoot and bounce back from.
@@ -339,13 +345,19 @@ local function OnUpdate(self, elapsed)
     anchor = self._anchor
     -- Drift applies either way. With an anchor gone the number keeps its rise-and-fade rather than being
     -- pinned to a screen point, which would falsely suggest it marks the corpse.
+    -- A SetPoint offset is measured in the frame's own scale, so a growing crit would magnify its own offset and
+    -- appear to slide down as it grows. Dividing by the current scale cancels that: every number, crit or not,
+    -- then sits the same distance from the anchor, and the crit holds one point for its whole growth.
+    local s = self:GetScale()
+    if not s or s <= 0 then s = 1 end
+    local ox, oy = x / s, y / s
     if anchor then
-        self:SetPoint("CENTER", anchor, "CENTER", x, y)
+        self:SetPoint("CENTER", anchor, "CENTER", ox, oy)
         -- Remember the spot while it is valid, so the frozen fallback lands where it last drew.
         local ax, ay = anchor:GetCenter()
         if ax and ay then self._originX, self._originY = ToUIParent(ax, ay, anchor) end
     else
-        self:SetPoint("CENTER", UIParent, "CENTER", self._originX + x, self._originY + y)
+        self:SetPoint("CENTER", UIParent, "CENTER", self._originX + ox, self._originY + oy)
     end
     -- Fully opaque until the last FADE seconds, then a straight ramp to zero, so the number is readable
     -- for most of its life instead of dimming the whole time.
@@ -458,8 +470,8 @@ local function Spawn(payload, kind, crit, guid, color)
     -- the end of the drift, so a burst fans out from that spot instead of spawning already scattered. Crits keep
     -- the offset and take no spread, so the big number stays on the unit.
     f._sx, f._sy = 0, spreadY
-    f._dx, f._dy = crit and 0 or math.random(-spreadX, spreadX),
-        spreadY + math.random(-vSpread, vSpread)
+    f._dx = crit and 0 or math.random(-spreadX, spreadX)
+    f._dy = crit and spreadY or (spreadY + math.random(-vSpread, vSpread))
     f._driftSpeed = crit and 1 or (DRIFT_SPEED_MIN + math.random() * (DRIFT_SPEED_MAX - DRIFT_SPEED_MIN))
     f.text:SetText(type(payload) == "string" and payload or tostring(payload))
     local c = color or COLORS[kind]
