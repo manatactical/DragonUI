@@ -660,7 +660,7 @@ local function BuildEnhancementsTab(scroll)
         desc = LO["How far numbers drift up or down over their lifetime, chosen at random within this range. 0 keeps them level."],
         min = 0, max = 60, step = 1,
         width = 200,
-        getFunc = function() return FCTDefault("verticalSpread", 16) end,
+        getFunc = function() return FCTDefault("verticalSpread", 24) end,
         setFunc = function(v)
             EnsureModuleTable("combattext").verticalSpread = v
         end,
@@ -672,7 +672,7 @@ local function BuildEnhancementsTab(scroll)
         desc = LO["Where the numbers start relative to the nameplate, as a percentage of its height. The plate floats above the unit's head, so a larger negative value drops the numbers onto the body."],
         min = -600, max = 100, step = 10,
         width = 200,
-        getFunc = function() return FCTDefault("offsetYPercent", -290) end,
+        getFunc = function() return FCTDefault("offsetYPercent", -180) end,
         setFunc = function(v)
             EnsureModuleTable("combattext").offsetYPercent = v
         end,

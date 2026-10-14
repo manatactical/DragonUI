@@ -17,9 +17,9 @@ local FONT = addon.Fonts.PRIMARY
 local DEFAULTS = {
     lifetime = 0.6,     -- total time on screen
     textSize = 16,      -- font height
-    verticalSpread = 16, -- drift is randomised within +/- this, so numbers go up or down
+    verticalSpread = 24, -- drift is randomised within +/- this, so numbers go up or down
     offsetX = 28,       -- horizontal jitter around the anchor
-    offsetYPercent = -290, -- percent of the plate's height; negative sits below its centre, over the body
+    offsetYPercent = -180, -- percent of the plate's height; negative sits below its centre, over the body
     plateHeight = 24,   -- fallback plate height in pixels when the plate cannot be measured
     fontStyle = "SHADOW",
     showDamageTaken = false,  -- off by default: incoming hits are noise while you are watching your own
@@ -30,6 +30,10 @@ local DEFAULTS = {
 local FONT_FLAGS = { NONE = "", OUTLINE = "OUTLINE", THICKOUTLINE = "THICKOUTLINE" }
 
 local FADE = 0.15       -- fade runs over the last FADE seconds of the lifetime
+-- Drift speed, randomised per number. The spread distance already differs per number, but every one still
+-- follows the same curve, so a burst drifts in lockstep. Scaling how far along that curve a number is at a
+-- given time gives each its own velocity. Hardcoded on purpose: this is feel, not a preference.
+local DRIFT_SPEED_MIN, DRIFT_SPEED_MAX = 0.7, 1.4
 -- Crits are told apart by size alone, not colour: spells are already yellow, so a differently coloured
 -- crit would be indistinguishable from a normal spell hit.
 local CRIT_SCALE = 1.6
@@ -298,7 +302,11 @@ local function OnUpdate(self, elapsed)
         Release(self)
         return
     end
-    local ease = 1 - (1 - t) * (1 - t)   -- fast out, slow in
+    -- A slow number is still travelling when it fades; a fast one settles early and holds. The alpha below
+    -- stays on t, so only the drift is rescaled, never the lifetime.
+    local dt = t * (self._driftSpeed or 1)
+    if dt > 1 then dt = 1 end
+    local ease = 1 - (1 - dt) * (1 - dt)   -- fast out, slow in
     local x = self._sx + (self._dx - self._sx) * ease
     local y = self._sy + (self._dy - self._sy) * ease
     if self._pulse then
@@ -446,15 +454,13 @@ local function Spawn(payload, kind, crit, guid, color)
         if ax and ay then f._originX, f._originY = ToUIParent(ax, ay, anchor) end
     end
     f._elapsed, f._duration = 0, Setting("lifetime")
-    -- Crits get no spread so the big number lands on the unit.
-    if crit then
-        f._sx, f._sy = 0, spreadY
-        f._dx, f._dy = 0, spreadY
-    else
-        f._sx, f._sy = math.random(-spreadX, spreadX), spreadY
-        f._dx, f._dy = f._sx + math.random(-spreadX, spreadX),
-            spreadY + math.random(-vSpread, vSpread)
-    end
+    -- Every number starts on one point -- the anchor plus the configured offset -- and the spread is applied at
+    -- the end of the drift, so a burst fans out from that spot instead of spawning already scattered. Crits keep
+    -- the offset and take no spread, so the big number stays on the unit.
+    f._sx, f._sy = 0, spreadY
+    f._dx, f._dy = crit and 0 or math.random(-spreadX, spreadX),
+        spreadY + math.random(-vSpread, vSpread)
+    f._driftSpeed = crit and 1 or (DRIFT_SPEED_MIN + math.random() * (DRIFT_SPEED_MAX - DRIFT_SPEED_MIN))
     f.text:SetText(type(payload) == "string" and payload or tostring(payload))
     local c = color or COLORS[kind]
     f.text:SetTextColor(c[1], c[2], c[3])

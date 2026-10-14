@@ -1333,9 +1333,9 @@ local defaults = {
                 enabled = false, -- Damage and healing numbers over the unit they land on, replacing Blizzard's
                 lifetime = 0.6, -- Seconds a number stays on screen (includes the fade)
                 textSize = 16,  -- Font height of the number
-                verticalSpread = 16, -- Pixels the number drifts up or down over its lifetime (random +/-)
+                verticalSpread = 24, -- Pixels the number drifts up or down over its lifetime (random +/-)
                 offsetX = 28,   -- Horizontal jitter around the anchor (0 = dead centre)
-                offsetYPercent = -290, -- Percent of the plate's height below its centre (the plate floats over the head)
+                offsetYPercent = -180, -- Percent of the plate's height below its centre (the plate floats over the head)
                 plateHeight = 24, -- Fallback plate height in pixels when the plate cannot be measured
                 fontStyle = "SHADOW", -- NONE | OUTLINE | THICKOUTLINE | SHADOW
                 showDamageTaken = false, -- Draw hits the player takes in red; off by default
