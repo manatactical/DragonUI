@@ -191,11 +191,7 @@ local function OnUpdate(self, elapsed)
     -- Only the offset is rewritten: the frame keeps the anchor as its point, so a plate that is still
     -- moving carries the number with it instead of leaving it behind (SetParent is not an option -- the
     -- plates are protected, and reparenting from tainted code is refused in combat).
-    if self._anchor then
-        self:SetPoint("CENTER", self._anchor, "CENTER", x, y)
-    else
-        self:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    end
+    self:SetPoint("CENTER", self._anchor, "CENTER", x, y)
     -- Fully opaque until the last FADE seconds, then a straight ramp to zero, so the number is readable
     -- for most of its life instead of dimming the whole time.
     local fadeStart = self._duration - FADE
@@ -230,17 +226,31 @@ local function Spawn(payload, kind, crit, guid, color)
 
     -- Follow the victim's plate, so the number rides its 3D model. A plate that exists but is not shown
     -- (out of range, or nameplates toggled off) still returns stale centre coords, so it must be dropped
-    -- here rather than at the draw. Only then fall back to the target frame, whose art does not move.
+    -- here rather than at the draw.
     local anchor = FindPlateFrame(guid)
     if not (anchor and anchor.IsShown and anchor:IsShown()) then anchor = nil end
 
     local useFallback = false
-    if not anchor and guid == UnitGUID("target") then
-        local tf = _G.TargetFrame
-        if tf and tf:IsShown() then
-            anchor, useFallback = tf, true
+    if not anchor then
+        -- Unit frames are the only other thing that tracks a unit on screen. There is deliberately no
+        -- screen-centre fallback: in third person that spot is where the player's own model is drawn, so
+        -- a DoT ticking on a target the player has looked away from used to land on the player.
+        local frame
+        if guid == UnitGUID("player") then
+            frame = _G.PlayerFrame
+        elseif guid == UnitGUID("target") then
+            frame = _G.TargetFrame
+        elseif guid == UnitGUID("focus") then
+            frame = _G.FocusFrame
+        end
+        if frame and frame.IsShown and frame:IsShown() then
+            anchor, useFallback = frame, true
         end
     end
+
+    -- Nothing on screen represents this unit, so the hit has nowhere honest to be drawn. Dropping it is
+    -- right: a number parked anywhere else would be lying about which unit took the damage.
+    if not anchor then return end
 
     local f = Acquire()
     -- Read per spawn so an options change applies to the next number, with no reload.
@@ -292,11 +302,7 @@ local function Spawn(payload, kind, crit, guid, color)
     f:SetScale(crit and scale * CRIT_GROW_FROM or scale)
     f:SetAlpha(1)
     f:ClearAllPoints()
-    if anchor then
-        f:SetPoint("CENTER", anchor, "CENTER", f._sx, f._sy)
-    else
-        f:SetPoint("CENTER", UIParent, "CENTER", f._sx, f._sy)
-    end
+    f:SetPoint("CENTER", anchor, "CENTER", f._sx, f._sy)
     f:SetScript("OnUpdate", OnUpdate)
     f:Show()
     lastSpawn = { amount = payload, kind = kind, crit = crit, guid = guid,
@@ -336,9 +342,9 @@ function addon.CombatTextTest()
     end
     -- Over the current target: the exact path a real hit on it takes.
     Spawn(11111, "physical", true, UnitExists("target") and UnitGUID("target") or nil)
-    -- At raw screen centre, the path damage taken already uses and which we know renders
-    Spawn(22222, "heal", false, nil)
-    print("[FCT] two numbers drawn: 11111 over the target's plate/model, 22222 at screen centre.")
+    -- The player's own path, anchored to PlayerFrame.
+    Spawn(22222, "heal", false, UnitGUID("player"))
+    print("[FCT] two numbers drawn: 11111 on the target, 22222 on the player.")
     addon.CombatTextDebug()
 end
 
