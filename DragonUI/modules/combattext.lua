@@ -31,6 +31,8 @@ local FADE = 0.15       -- fade runs over the last FADE seconds of the lifetime
 -- Crits are told apart by size alone, not colour: spells are already yellow, so a differently coloured
 -- crit would be indistinguishable from a normal spell hit.
 local CRIT_SCALE = 1.6
+-- Spells and companion hits (the yellow numbers) read 20% larger than the player's own auto attacks.
+local SPELL_BOOST = 1.2
 
 local function Setting(key)
     local modules = addon.db and addon.db.profile and addon.db.profile.modules
@@ -203,8 +205,9 @@ local function Acquire()
     return f
 end
 
-local function Spawn(amount, kind, crit, guid, color)
-    if not amount or amount <= 0 then return end
+local function Spawn(payload, kind, crit, guid, color)
+    if payload == nil then return end
+    if type(payload) == "number" and payload <= 0 then return end
 
     -- Follow the victim's plate, so the number rides its 3D model. A plate that exists but is not shown
     -- (out of range, or nameplates toggled off) still returns stale centre coords, so it must be dropped
@@ -242,10 +245,14 @@ local function Spawn(amount, kind, crit, guid, color)
     f._sx, f._sy = math.random(-spreadX, spreadX), spreadY
     f._dx, f._dy = f._sx + math.random(-spreadX, spreadX), spreadY + rise
     f._elapsed, f._duration = 0, Setting("lifetime")
-    f:SetScale(crit and CRIT_SCALE or 1)
-    f.text:SetText(tostring(amount))
+    f.text:SetText(type(payload) == "string" and payload or tostring(payload))
     local c = color or COLORS[kind]
     f.text:SetTextColor(c[1], c[2], c[3])
+    -- Yellow reads larger, and a crit multiplies on top of that rather than replacing it, so a crit spell
+    -- is still visibly bigger than a crit auto attack.
+    local scale = crit and CRIT_SCALE or 1
+    if c == COLORS.spell then scale = scale * SPELL_BOOST end
+    f:SetScale(scale)
     f:SetAlpha(1)
     f:ClearAllPoints()
     if anchor then
@@ -255,7 +262,7 @@ local function Spawn(amount, kind, crit, guid, color)
     end
     f:SetScript("OnUpdate", OnUpdate)
     f:Show()
-    lastSpawn = { amount = amount, kind = kind, crit = crit, guid = guid,
+    lastSpawn = { amount = payload, kind = kind, crit = crit, guid = guid,
         anchored = anchor ~= nil, fallback = useFallback, anchor = anchor and anchor.GetName and anchor:GetName() }
 end
 
@@ -309,6 +316,27 @@ local SWING_AMOUNT, SWING_CRIT = 9, 15   -- SWING_DAMAGE: no spell triple
 local SPELL_AMOUNT, SPELL_CRIT = 12, 18  -- RANGE/SPELL damage, DAMAGE_SHIELD, DAMAGE_SPLIT
 local HEAL_AMOUNT, HEAL_CRIT = 12, 15    -- SPELL_HEAL, SPELL_PERIODIC_HEAL: amount..absorbed, critical
 
+-- Miss events carry a missType string instead of an amount. Every non-swing family lays it out the same
+-- way (spellID, spellName, spellSchool, missType, absorbed), so one offset covers SPELL, RANGE and
+-- DAMAGE_SHIELD; SWING has no spell triple and puts the miss where SWING_DAMAGE puts its amount. A nil
+-- missType is the client's way of saying the whole hit was absorbed, the one case worth a number.
+local SPELL_MISS_TYPE = 12  -- SPELL_MISSED / RANGE_MISSED / DAMAGE_SHIELD_MISSED: after the spell triple
+
+local MISS_TEXT = {
+    MISS    = "Miss",
+    DODGE   = "Dodge",
+    PARRY   = "Parry",
+    BLOCK   = "Block",
+    EVADE   = "Evade",
+    IMMUNE  = "Immune",
+    DEFLECT = "Deflect",
+    RESIST  = "Resist",
+    REFLECT = "Reflect",
+    ABSORB  = "Absorb",
+}
+
+local GREY = { 0.7, 0.7, 0.7 }
+
 -- Shared by every event: the combat log is hot, one scratch table beats one allocation per line.
 local scratch = {}
 
@@ -327,29 +355,46 @@ local function OnCombatLog(...)
         return
     end
 
-    local amount, crit, kind
+    local amount, crit, kind, text, isHeal
+    local suffix = eventType:match("_(%w+)$")
     if eventType == "SWING_DAMAGE" then
         amount, crit, kind = scratch[SWING_AMOUNT], scratch[SWING_CRIT], "damage"
+    elseif suffix == "HEAL" then
+        -- Whole absorbed heals also report nil here; they are dropped, not shown as 0.
+        amount, crit, kind, isHeal = scratch[HEAL_AMOUNT], scratch[HEAL_CRIT], "heal", true
+    elseif suffix == "MISSED" then
+        -- The miss is at the family's own offset, and the absorbed amount always follows it directly.
+        local missAt = eventType == "SWING_MISSED" and SWING_AMOUNT or SPELL_MISS_TYPE
+        local missType = scratch[missAt]
+        amount = scratch[missAt + 1]
+        kind = "spell"
+        if missType then text = MISS_TEXT[missType] or missType end
     elseif eventType == "RANGE_DAMAGE" or eventType == "SPELL_DAMAGE"
         or eventType == "SPELL_PERIODIC_DAMAGE" or eventType == "DAMAGE_SHIELD"
         or eventType == "DAMAGE_SPLIT" then
-        amount, crit, kind = scratch[SPELL_AMOUNT], scratch[SPELL_CRIT], "damage"
-    elseif eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL" then
-        amount, crit, kind = scratch[HEAL_AMOUNT], scratch[HEAL_CRIT], "heal"
+        amount, crit, kind = scratch[SPELL_AMOUNT], scratch[SPELL_CRIT], "spell"
     else
         return
     end
 
     -- destGUID is read out before the scratch table is cleared, or it goes nil with it.
     for i = 1, n do scratch[i] = nil end
-    if type(amount) ~= "number" then return end
+
+    -- A miss with words is drawn as words. A miss with no words and no positive amount is a fully absorbed
+    -- hit, which has no useful payload at all, so it is dropped rather than shown as a bare 0.
+    if type(amount) ~= "number" then amount = nil end
+    if text then amount = nil end
+    if not text and (not amount or amount <= 0) then return end
 
     -- Colour by who landed the hit: the player's own auto-attack is white, a pet's SWING is still a
     -- companion hit and reads yellow, and anything the player takes is red so their own numbers read apart.
     local color
-    if kind == "heal" then
+    if text then
+        color = GREY
+    elseif isHeal then
         color = COLORS.heal
     elseif not IsMine(sourceGUID) then
+        -- Something hit the player (source was the only match): red, and readable as such.
         color = RED
     elseif eventType == "SWING_DAMAGE" and sourceGUID == UnitGUID("player") then
         color = COLORS.physical
@@ -358,7 +403,8 @@ local function OnCombatLog(...)
     end
 
     rawDamage = rawDamage + 1
-    Spawn(amount, kind, crit == true or crit == 1, destGUID, color)
+    local critFlag = (crit == true or crit == 1) and not text
+    Spawn(text or amount, kind, critFlag, destGUID, color)
 end
 
 -- =============================================================================
