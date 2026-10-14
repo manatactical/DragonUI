@@ -279,6 +279,9 @@ local COLORS = {
 local RED = { 1, 0.25, 0.25 }      -- damage the player takes
 
 local pool = {}
+-- Numbers still on screen, kept so a new one can be placed clear of them. Without this a burst of crits lands
+-- on one spot: crits carry no spread of their own, so they would draw exactly on top of each other.
+local live = {}
 
 -- Diagnostic: what the last number did. Read with /run DragonUI.CombatTextDebug()
 local lastSpawn
@@ -481,6 +484,28 @@ local function Spawn(payload, kind, crit, guid, color)
     -- centre -- which is what makes the number look like it grows from its top edge instead of its middle.
     local tw, th = f.text:GetStringWidth(), f.text:GetStringHeight()
     f:SetSize(tw, th)
+
+    -- Keep the new number clear of the ones already on screen, by pushing it up past the slot they occupy. The
+    -- drift already fans a burst out over its life, so only the opening moments can collide -- and those are
+    -- exactly the ones a shared spawn point makes unreadable. Expired entries are dropped in the same pass.
+    local ox, oy = f._originX + f._dx, f._originY + f._dy
+    local now = GetTime()
+    local step = th + 2
+    local moved = true
+    while moved do
+        moved = false
+        for i = #live, 1, -1 do
+            local o = live[i]
+            if (now - o.at) > o.duration then
+                table.remove(live, i)
+            elseif math.abs(ox - o.x) < tw and math.abs(oy - o.y) < step then
+                oy = oy + step
+                moved = true
+            end
+        end
+    end
+    live[#live + 1] = { x = ox, y = oy, at = now, duration = f._duration }
+    f._dy = oy - f._originY
     -- Yellow reads larger, and a crit multiplies on top of that rather than replacing it, so a crit spell
     -- is still visibly bigger than a crit auto attack.
     local scale = crit and CRIT_SCALE or 1
@@ -707,6 +732,7 @@ function addon.RestoreCombatTextSystem()
     sampler:Hide()
     for guid in pairs(tracked) do tracked[guid] = nil end
     for guid in pairs(lastPos) do lastPos[guid] = nil end
+    for i = #live, 1, -1 do live[i] = nil end
     for _, f in ipairs(pool) do
         f:Hide()
     end
