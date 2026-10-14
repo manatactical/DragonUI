@@ -48,6 +48,10 @@ L["Choose the language used by the DragonUI interface."] = "Elige el idioma que 
 L["Follow the client language"] = "Seguir el idioma del cliente"
 L["Number Abbreviations"] = "Abreviatura de números"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "Cómo acortan los números grandes los marcos de unidad, las placas de nombre y la barra de recursos."
+
+-- Loot Roll
+L["Auto Greed/DE"] = "Codicia/Desencantar automático"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "Selecciona automáticamente codicia o desencantar (cuando esté disponible) en objetos de calidad verde. Esto solo funciona si estás en el nivel máximo."
 L["Settings Window"] = "Ventana de ajustes"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "Tamaño de esta ventana sobre tu escala de interfaz; 1.0 es el de los demás paneles. Nunca se sale de la pantalla."
 
@@ -1508,7 +1512,9 @@ L["Force one icon on all enemy nameplates so you can position and size it. Set t
 L["Modern reskin of the Blizzard character window."] = "Rediseño moderno de la ventana de personaje de Blizzard."
 L["Enable Character Panel"] = "Activar panel de personaje"
 L["Apply the DragonUI reskin to the character window."] = "Aplica el rediseño de DragonUI a la ventana de personaje."
-L["Show your class icon in the portrait instead of your character's face."] = "Muestra el icono de tu clase en el retrato en vez de la cara de tu personaje."
+L["Portrait"] = "Retrato"
+L["Class Icon"] = "Icono de clase"
+L["Specialization Icon"] = "Icono de especialización"
 L["Class-Colored Level Text"] = "Texto de nivel con color de clase"
 L["Pets & Mounts"] = "Mascotas y monturas"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "Una ventana dedicada a tus monturas y mascotas de compañía, en sustitución de la antigua pestaña Mascota de la ventana de personaje."

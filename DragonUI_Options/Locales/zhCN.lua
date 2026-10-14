@@ -51,6 +51,10 @@ L["Choose the language used by the DragonUI interface."] = "选择DragonUI界面
 L["Follow the client language"] = "跟随客户端语言"
 L["Number Abbreviations"] = "数字缩写"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "单位框架、姓名板和个人资源显示中大数字的缩写方式。"
+
+-- Loot Roll
+L["Auto Greed/DE"] = "自动贪婪/分解"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "在可用时自动对绿色品质物品选择贪婪或分解。仅在满级时有效。"
 L["Settings Window"] = "设置窗口"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "此窗口在界面缩放之上的大小；1.0 与其他面板相同。窗口不会超出屏幕。"
 
@@ -1508,7 +1512,9 @@ L["Force one icon on all enemy nameplates so you can position and size it. Set t
 L["Modern reskin of the Blizzard character window."] = "为暴雪的角色面板换上现代外观。"
 L["Enable Character Panel"] = "启用角色面板"
 L["Apply the DragonUI reskin to the character window."] = "对角色窗口应用 DragonUI 外观。"
-L["Show your class icon in the portrait instead of your character's face."] = "在头像处显示职业图标，而不是角色面容。"
+L["Portrait"] = "头像"
+L["Class Icon"] = "职业图标"
+L["Specialization Icon"] = "专精图标"
 L["Class-Colored Level Text"] = "职业色等级文字"
 L["Pets & Mounts"] = "宠物与坐骑"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "专门的坐骑与宠物窗口，取代角色窗口旧的宠物标签。"

@@ -288,6 +288,7 @@ local defaults = {
             anchor = "BOTTOM",
             x = 0,
             y = 220,
+            autoRoll = false, -- Auto greed/disenchant green BoE rolls at max level
         },
         -- ACTIONBAR SETTINGS
         mainbars = {
@@ -1192,7 +1193,7 @@ local defaults = {
             },
             characterpanel = {
                 enabled = true, -- Retail-style reskin of the Blizzard character window
-                class_portrait = true, -- Class icon in the portrait instead of the player's face
+                portrait_style = "spec", -- Portrait art: "character" face, "class" icon or "spec" icon
                 class_level_text = true, -- Class-colored "Level X Race Class" line
                 dark_background = false, -- Tint the panel's stone grounds down; the cog toggles it
                 grey_model_backdrop = true, -- Desaturate and dim the race backdrop behind the model

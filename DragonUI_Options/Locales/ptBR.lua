@@ -668,6 +668,10 @@ L["Choose the language used by the DragonUI interface."] = "Escolha o idioma usa
 L["Follow the client language"] = "Seguir o idioma do cliente"
 L["Number Abbreviations"] = "Abreviação de números"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "Como os quadros de unidade, as placas de nome e a exibição de recursos abreviam números grandes."
+
+-- Loot Roll
+L["Auto Greed/DE"] = "Ganância/Desencantar automático"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "Seleciona automaticamente ganância ou desencantar (quando disponível) em itens de qualidade verde. Isso só funciona se você estiver no nível máximo."
 L["Settings Window"] = "Janela de configurações"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "Tamanho desta janela sobre a sua escala de interface; 1.0 é o dos outros painéis. Nunca passa do tamanho da tela."
 
@@ -1328,7 +1332,9 @@ L["Interface"] = "Interface"
 L["Modern reskin of the Blizzard character window."] = "Visual moderno para a janela de personagem da Blizzard."
 L["Enable Character Panel"] = "Ativar painel de personagem"
 L["Apply the DragonUI reskin to the character window."] = "Aplica o visual do DragonUI à janela de personagem."
-L["Show your class icon in the portrait instead of your character's face."] = "Mostra o ícone da sua classe no retrato em vez do rosto do personagem."
+L["Portrait"] = "Retrato"
+L["Class Icon"] = "Ícone de classe"
+L["Specialization Icon"] = "Ícone de especialização"
 L["Class-Colored Level Text"] = "Texto de nível com cor de classe"
 L["Pets & Mounts"] = "Mascotes e montarias"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "Uma janela dedicada às suas montarias e mascotes, substituindo a antiga aba Mascote da janela de personagem."

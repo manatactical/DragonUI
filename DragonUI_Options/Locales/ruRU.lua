@@ -53,6 +53,10 @@ L["Follow the client language"] = "Следовать языку клиента"
 L["Number Abbreviations"] = "Сокращение чисел"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "Как сокращаются большие числа на фреймах, индикаторах и панели личных ресурсов."
 
+-- Loot Roll
+L["Auto Greed/DE"] = "Авто-жадность/распыление"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "Автоматически выбирает жадность или распыление (если доступно) для предметов зелёного качества. Это работает только на максимальном уровне."
+
 L["Commands: /dragonui, /dui, /pi — /dragonui edit (editor) — /dragonui help"] = "Команды: /dragonui, /dui, /pi — /dragonui edit (редактор) — /dragonui help"
 L["GitHub (select and Ctrl+C to copy):"] = "GitHub (выделите и нажмите Ctrl+C для копирования):"
 L["All"] = "Все"
@@ -1511,7 +1515,9 @@ L["Force one icon on all enemy nameplates so you can position and size it. Set t
 L["Modern reskin of the Blizzard character window."] = "Современное оформление окна персонажа Blizzard."
 L["Enable Character Panel"] = "Включить окно персонажа"
 L["Apply the DragonUI reskin to the character window."] = "Применяет оформление DragonUI к окну персонажа."
-L["Show your class icon in the portrait instead of your character's face."] = "Показывать в портрете значок класса вместо лица."
+L["Portrait"] = "Портрет"
+L["Class Icon"] = "Значок класса"
+L["Specialization Icon"] = "Значок специализации"
 L["Class-Colored Level Text"] = "Цвет класса в строке уровня"
 L["Pets & Mounts"] = "Спутники и транспорт"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "Отдельное окно для транспорта и спутников вместо старой вкладки питомца."

@@ -51,6 +51,10 @@ L["Follow the client language"] = true
 L["Number Abbreviations"] = true
 L["How unit frames, nameplates and the resource display shorten large numbers."] = true
 
+-- Loot Roll
+L["Auto Greed/DE"] = true
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = true
+
 -- Settings window
 L["Settings Window"] = true
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = true
@@ -118,7 +122,9 @@ L["Modern reskin of the Blizzard character window."] = true
 L["Enable Character Panel"] = true
 L["Apply the DragonUI reskin to the character window."] = true
 L["Class Portrait"] = true
-L["Show your class icon in the portrait instead of your character's face."] = true
+L["Portrait"] = true
+L["Class Icon"] = true
+L["Specialization Icon"] = true
 L["Class-Colored Level Text"] = true
 L["Color the class name in the \"Level X Race Class\" line."] = true
 -- Pets & Mounts

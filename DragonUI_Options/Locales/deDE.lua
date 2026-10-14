@@ -48,6 +48,10 @@ L["Choose the language used by the DragonUI interface."] = "Wähle die Sprache f
 L["Follow the client language"] = "Clientsprache übernehmen"
 L["Number Abbreviations"] = "Zahlenabkürzungen"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "Wie Einheitenfenster, Namensplaketten und die Ressourcenanzeige große Zahlen abkürzen."
+
+-- Loot Roll
+L["Auto Greed/DE"] = "Automatisch Gier/Entzauberung"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "Wählt automatisch Gier oder Entzauberung (wenn verfügbar) bei grünen Gegenständen. Dies funktioniert nur auf der Maximalstufe."
 L["Settings Window"] = "Einstellungsfenster"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "Größe dieses Fensters zusätzlich zu deiner UI-Skalierung; 1.0 entspricht den anderen Fenstern. Es wird nie größer als der Bildschirm."
 
@@ -1509,7 +1513,9 @@ L["Force one icon on all enemy nameplates so you can position and size it. Set t
 L["Modern reskin of the Blizzard character window."] = "Moderne Überarbeitung des Blizzard-Charakterfensters."
 L["Enable Character Panel"] = "Charakterfenster aktivieren"
 L["Apply the DragonUI reskin to the character window."] = "Wendet die DragonUI-Gestaltung auf das Charakterfenster an."
-L["Show your class icon in the portrait instead of your character's face."] = "Zeigt im Porträt das Klassensymbol statt des Gesichts."
+L["Portrait"] = "Porträt"
+L["Class Icon"] = "Klassensymbol"
+L["Specialization Icon"] = "Spezialisierungssymbol"
 L["Class-Colored Level Text"] = "Klassenfarbige Stufenzeile"
 L["Pets & Mounts"] = "Haustiere & Reittiere"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "Ein eigenes Fenster für Reittiere und Begleiter, das den alten Haustier-Reiter des Charakterfensters ersetzt."

@@ -672,6 +672,10 @@ L["Choose the language used by the DragonUI interface."] = "Choisissez la langue
 L["Follow the client language"] = "Suivre la langue du client"
 L["Number Abbreviations"] = "Abréviation des nombres"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "Façon dont les fenêtres d'unité, les plaques de nom et l'affichage des ressources abrègent les grands nombres."
+
+-- Loot Roll
+L["Auto Greed/DE"] = "Gourmandise/Désenchantement auto"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "Sélectionne automatiquement gourmandise ou désenchantement (si disponible) sur les objets de qualité verte. Cela ne fonctionne que si vous êtes au niveau maximal."
 L["Settings Window"] = "Fenêtre des réglages"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "Taille de cette fenêtre, en plus de votre échelle d'interface ; 1.0 correspond aux autres panneaux. Elle ne dépasse jamais de l'écran."
 
@@ -1327,7 +1331,9 @@ L["Interface"] = "Interface"
 L["Modern reskin of the Blizzard character window."] = "Refonte moderne de la fiche de personnage de Blizzard."
 L["Enable Character Panel"] = "Activer le panneau de personnage"
 L["Apply the DragonUI reskin to the character window."] = "Applique l'habillage DragonUI à la fenêtre de personnage."
-L["Show your class icon in the portrait instead of your character's face."] = "Affiche l'icône de votre classe dans le portrait au lieu du visage."
+L["Portrait"] = "Portrait"
+L["Class Icon"] = "Icône de classe"
+L["Specialization Icon"] = "Icône de spécialisation"
 L["Class-Colored Level Text"] = "Texte de niveau aux couleurs de classe"
 L["Pets & Mounts"] = "Mascottes et montures"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "Une fenêtre dédiée à vos montures et mascottes, qui remplace l'ancien onglet Familier de la fenêtre de personnage."

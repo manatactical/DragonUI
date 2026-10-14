@@ -57,6 +57,10 @@ L["Choose the language used by the DragonUI interface."] = "DragonUI 인터페�
 L["Follow the client language"] = "클라이언트 언어 따르기"
 L["Number Abbreviations"] = "숫자 단위 표기"
 L["How unit frames, nameplates and the resource display shorten large numbers."] = "유닛 프레임, 이름표, 자원 표시에서 큰 숫자를 줄여 쓰는 방식입니다."
+
+-- Loot Roll
+L["Auto Greed/DE"] = "자동 탐욕/분해"
+L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = "사용 가능한 경우 초록색 등급 아이템에 대해 자동으로 탐욕 또는 분해를 선택합니다. 최대 레벨에서만 작동합니다."
 L["Settings Window"] = "설정 창"
 L["Size of this window on top of your UI scale; 1.0 matches the other panels. It never grows past the screen."] = "UI 크기에 더해 적용되는 이 창의 크기입니다. 1.0이 다른 창과 같습니다. 화면을 벗어나지 않습니다."
 
@@ -1512,7 +1516,9 @@ L["Force one icon on all enemy nameplates so you can position and size it. Set t
 L["Modern reskin of the Blizzard character window."] = "블리자드 캐릭터 창의 현대적인 리스킨입니다."
 L["Enable Character Panel"] = "캐릭터 창 사용"
 L["Apply the DragonUI reskin to the character window."] = "캐릭터 창에 DragonUI 스킨을 적용합니다."
-L["Show your class icon in the portrait instead of your character's face."] = "초상화에 캐릭터 얼굴 대신 직업 아이콘을 표시합니다."
+L["Portrait"] = "초상화"
+L["Class Icon"] = "직업 아이콘"
+L["Specialization Icon"] = "전문화 아이콘"
 L["Class-Colored Level Text"] = "직업 색상 레벨 텍스트"
 L["Pets & Mounts"] = "애완동물 및 탈것"
 L["A dedicated window for your mounts and companion pets, replacing the old Pet tab of the character window."] = "탈것과 애완동물 전용 창으로, 캐릭터 창의 예전 애완동물 탭을 대체합니다."
