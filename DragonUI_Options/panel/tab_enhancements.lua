@@ -656,13 +656,13 @@ local function BuildEnhancementsTab(scroll)
     })
 
     C:AddSlider(fctSection, {
-        label = LO["Rise"],
-        desc = LO["Pixels the numbers drift upward over their lifetime. 0 keeps them still."],
+        label = LO["Vertical Spread"],
+        desc = LO["How far numbers drift up or down over their lifetime, chosen at random within this range. 0 keeps them level."],
         min = 0, max = 60, step = 1,
         width = 200,
-        getFunc = function() return FCTDefault("rise", 14) end,
+        getFunc = function() return FCTDefault("verticalSpread", 16) end,
         setFunc = function(v)
-            EnsureModuleTable("combattext").rise = v
+            EnsureModuleTable("combattext").verticalSpread = v
         end,
         disabled = function() return not IsEnabled("combattext") end,
     })
@@ -691,6 +691,16 @@ local function BuildEnhancementsTab(scroll)
         disabled = function() return not IsEnabled("combattext") end,
     })
 
+    C:AddToggle(fctSection, {
+        label = LO["Show Damage Taken"],
+        desc = LO["Draw incoming hits on yourself in red. Off keeps the screen to your own numbers."],
+        getFunc = function() return GetModuleField("combattext", "showDamageTaken") == true end,
+        setFunc = function(val)
+            EnsureModuleTable("combattext").showDamageTaken = val
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
     C:AddDropdown(fctSection, {
         label = LO["Font Style"],
         desc = LO["Outline adds a dark border to the numbers; shadow is softer and cheaper to read in motion."],
@@ -703,7 +713,7 @@ local function BuildEnhancementsTab(scroll)
         getFunc = function()
             local m = addon.db.profile.modules.combattext
             local v = m and m.fontStyle
-            return (type(v) == "string" and v) or "THICKOUTLINE"
+            return (type(v) == "string" and v) or "SHADOW"
         end,
         setFunc = function(v)
             EnsureModuleTable("combattext").fontStyle = v

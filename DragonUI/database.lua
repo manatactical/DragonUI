@@ -1333,10 +1333,11 @@ local defaults = {
                 enabled = false, -- Damage and healing numbers over the unit they land on, replacing Blizzard's
                 lifetime = 0.6, -- Seconds a number stays on screen (includes the fade)
                 textSize = 16,  -- Font height of the number
-                rise = 14,      -- Pixels the number drifts upward over its lifetime
+                verticalSpread = 16, -- Pixels the number drifts up or down over its lifetime (random +/-)
                 offsetX = 28,   -- Horizontal jitter around the anchor (0 = dead centre)
                 offsetY = -70,  -- Start offset from the anchor; negative is lower, over the body
-                fontStyle = "THICKOUTLINE", -- NONE | OUTLINE | THICKOUTLINE | SHADOW
+                fontStyle = "SHADOW", -- NONE | OUTLINE | THICKOUTLINE | SHADOW
+                showDamageTaken = false, -- Draw hits the player takes in red; off by default
             },
             addonmanager = {
                 enabled = true, -- AddOns button in the Esc menu opening the in-game addon list

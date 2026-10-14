@@ -17,10 +17,11 @@ local FONT = addon.Fonts.PRIMARY
 local DEFAULTS = {
     lifetime = 0.6,     -- total time on screen
     textSize = 16,      -- font height
-    rise = 14,          -- upward drift over that whole lifetime
+    verticalSpread = 16, -- drift is randomised within +/- this, so numbers go up or down
     offsetX = 28,       -- horizontal jitter around the anchor
     offsetY = -70,      -- start below the plate's centre, over the body rather than the top of the head
-    fontStyle = "THICKOUTLINE",
+    fontStyle = "SHADOW",
+    showDamageTaken = false,  -- off by default: incoming hits are noise while you are watching your own
 }
 
 -- SetFont flags: NONE means "no flags at all", which is an empty string, not the word NONE. THICKOUTLINE
@@ -31,6 +32,11 @@ local FADE = 0.15       -- fade runs over the last FADE seconds of the lifetime
 -- Crits are told apart by size alone, not colour: spells are already yellow, so a differently coloured
 -- crit would be indistinguishable from a normal spell hit.
 local CRIT_SCALE = 1.6
+-- A crit arrives with a punch: it appears at CRIT_GROW_FROM of its size and snaps up to full over
+-- CRIT_GROW_DURATION, then holds that size for the rest of its life. Growing up from a smaller start
+-- reads far more than a swell around the final size, which the eye barely catches at this lifetime.
+local CRIT_GROW_DURATION = 0.06
+local CRIT_GROW_FROM = 0.4
 -- Spells and companion hits (the yellow numbers) read 20% larger than the player's own auto attacks.
 local SPELL_BOOST = 1.2
 
@@ -170,6 +176,18 @@ local function OnUpdate(self, elapsed)
     local ease = 1 - (1 - t) * (1 - t)   -- fast out, slow in
     local x = self._sx + (self._dx - self._sx) * ease
     local y = self._sy + (self._dy - self._sy) * ease
+    if self._pulse then
+        -- Ease-out: most of the growth lands in the first frames, then it settles. It ends exactly on the
+        -- base size, so there is nothing to overshoot and bounce back from.
+        local pe = e / CRIT_GROW_DURATION
+        if pe < 1 then
+            local grown = 1 - (1 - pe) * (1 - pe)
+            self:SetScale(self._baseScale * (CRIT_GROW_FROM + (1 - CRIT_GROW_FROM) * grown))
+        elseif not self._pulseDone then
+            self:SetScale(self._baseScale)
+            self._pulseDone = true
+        end
+    end
     -- Only the offset is rewritten: the frame keeps the anchor as its point, so a plate that is still
     -- moving carries the number with it instead of leaving it behind (SetParent is not an option -- the
     -- plates are protected, and reparenting from tainted code is refused in combat).
@@ -197,6 +215,7 @@ local function Acquire()
     -- target frame. Level 0 keeps it under real dialogs while clearing every unit frame.
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(0)
+    -- Sized per spawn to the actual text; this is only a starting box so the frame is never zero-sized.
     f:SetSize(40, 16)
     f:SetClampedToScreen(true)
     f.text = f:CreateFontString(nil, "OVERLAY")
@@ -225,7 +244,7 @@ local function Spawn(payload, kind, crit, guid, color)
 
     local f = Acquire()
     -- Read per spawn so an options change applies to the next number, with no reload.
-    local rise, size = Setting("rise"), Setting("textSize")
+    local vSpread, size = Setting("verticalSpread"), Setting("textSize")
     local spreadX, spreadY = Setting("offsetX"), Setting("offsetY")
     local style = Setting("fontStyle")
     if style == "SHADOW" then
@@ -240,19 +259,37 @@ local function Spawn(payload, kind, crit, guid, color)
         f.text:SetShadowOffset(0, 0)
     end
     -- Offsets are kept in the anchor's space, so the anchor can be resolved by SetPoint every frame and
-    -- the number still rides a plate that is moving.
+    -- the number still rides a plate that is moving. Crits get no spread at all, so the big number always
+    -- lands on the unit rather than drifting off it.
     f._anchor = anchor
-    f._sx, f._sy = math.random(-spreadX, spreadX), spreadY
-    f._dx, f._dy = f._sx + math.random(-spreadX, spreadX), spreadY + rise
+    if crit then
+        f._sx, f._sy = 0, spreadY
+        f._dx, f._dy = 0, spreadY
+    else
+        f._sx, f._sy = math.random(-spreadX, spreadX), spreadY
+        f._dx, f._dy = f._sx + math.random(-spreadX, spreadX),
+            spreadY + math.random(-vSpread, vSpread)
+    end
     f._elapsed, f._duration = 0, Setting("lifetime")
     f.text:SetText(type(payload) == "string" and payload or tostring(payload))
     local c = color or COLORS[kind]
     f.text:SetTextColor(c[1], c[2], c[3])
+    -- Fit the frame to the text. SetScale scales the frame about its own centre, and the fontstring is
+    -- centred in it, so a frame bigger than its text scales the glyphs about a point that is not their
+    -- centre -- which is what makes the number look like it grows from its top edge instead of its middle.
+    local tw, th = f.text:GetStringWidth(), f.text:GetStringHeight()
+    f:SetSize(tw, th)
     -- Yellow reads larger, and a crit multiplies on top of that rather than replacing it, so a crit spell
     -- is still visibly bigger than a crit auto attack.
     local scale = crit and CRIT_SCALE or 1
     if c == COLORS.spell then scale = scale * SPELL_BOOST end
-    f:SetScale(scale)
+    f._baseScale = scale
+    -- Only crits pulse; resetting the flag each spawn stops a pooled non-crit inheriting the last one's.
+    f._pulse = crit or false
+    f._pulseDone = false
+    -- A crit starts at its small size, so the very first rendered frame is already growing instead of
+    -- flashing at full size for a frame and then snapping down.
+    f:SetScale(crit and scale * CRIT_GROW_FROM or scale)
     f:SetAlpha(1)
     f:ClearAllPoints()
     if anchor then
@@ -386,6 +423,12 @@ local function OnCombatLog(...)
     if text then amount = nil end
     if not text and (not amount or amount <= 0) then return end
 
+    -- Something the player is taking rather than dealing (the source was not ours, the destination was).
+    -- Off by default: incoming hits are noise while you watch your own numbers. Covers misses taken too,
+    -- so one switch governs every incoming event rather than just the ones with a number.
+    local incoming = not IsMine(sourceGUID)
+    if incoming and not Setting("showDamageTaken") then return end
+
     -- Colour by who landed the hit: the player's own auto-attack is white, a pet's SWING is still a
     -- companion hit and reads yellow, and anything the player takes is red so their own numbers read apart.
     local color
@@ -393,8 +436,7 @@ local function OnCombatLog(...)
         color = GREY
     elseif isHeal then
         color = COLORS.heal
-    elseif not IsMine(sourceGUID) then
-        -- Something hit the player (source was the only match): red, and readable as such.
+    elseif incoming then
         color = RED
     elseif eventType == "SWING_DAMAGE" and sourceGUID == UnitGUID("player") then
         color = COLORS.physical
