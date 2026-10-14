@@ -1329,6 +1329,15 @@ local defaults = {
                 flashOpacity = 0.35, -- Max alpha of the flash (0.0–1.0)
                 flashExtent = 40,  -- Pixels from screen edges toward center
             },
+            combattext = {
+                enabled = false, -- Damage and healing numbers over the unit they land on, replacing Blizzard's
+                lifetime = 0.6, -- Seconds a number stays on screen (includes the fade)
+                textSize = 16,  -- Font height of the number
+                rise = 14,      -- Pixels the number drifts upward over its lifetime
+                offsetX = 28,   -- Horizontal jitter around the anchor (0 = dead centre)
+                offsetY = -70,  -- Start offset from the anchor; negative is lower, over the body
+                fontStyle = "THICKOUTLINE", -- NONE | OUTLINE | THICKOUTLINE | SHADOW
+            },
             addonmanager = {
                 enabled = true, -- AddOns button in the Esc menu opening the in-game addon list
                 scale = 1, -- Addon list window scale on top of the UI scale

@@ -697,6 +697,10 @@ L["Level %d"] = true
 
 L["Low HP Alert"] = true
 L["Plays a sound and flashes the screen edges when your HP drops below the threshold."] = true
+
+-- Floating combat text
+L["Floating Combat Text"] = true
+L["Damage and healing numbers over the unit they land on, replacing Blizzard's floating combat text."] = true
 L["Personal Resource Display"] = true
 L["PersonalResource"] = true
 L["Add Health and Resource below your Character."] = true

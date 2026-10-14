@@ -1599,6 +1599,25 @@ L["Show a bar with the time left until each weapon's next swing."] = true
 L["Show Bar Title"] = true
 L["Show Time"] = true
 
+-- Floating Combat Text
+L["Floating Combat Text"] = true
+L["Lifetime"] = true
+L["How long a number stays on screen, including its fade."] = true
+L["Text Size"] = true
+L["Font height of the numbers."] = true
+L["Rise"] = true
+L["Pixels the numbers drift upward over their lifetime. 0 keeps them still."] = true
+L["Vertical Offset"] = true
+L["Where the numbers start relative to the unit. Lower (more negative) sits them over the body."] = true
+L["Horizontal Spread"] = true
+L["How far numbers scatter sideways, so hits landing together stay readable."] = true
+L["Font Style"] = true
+L["Outline adds a dark border to the numbers; shadow is softer and cheaper to read in motion."] = true
+L["None"] = true
+L["Outline"] = true
+L["Thick Outline"] = true
+L["Shadow"] = true
+
 -- Talents
 L["Talents"] = true
 L["Retail-style talent window"] = true

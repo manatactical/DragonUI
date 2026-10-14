@@ -619,8 +619,98 @@ local function BuildEnhancementsTab(scroll)
     })
 
     -- ====================================================================
-    -- ENHANCED TOOLTIPS
+    -- FLOATING COMBAT TEXT
     -- ====================================================================
+    C:AddSpacer(scroll)
+    local fctSection = C:AddSection(scroll, LO["Floating Combat Text"])
+
+    local function FCTDefault(field, fallback)
+        local m = addon.db.profile.modules.combattext
+        local v = m and m[field]
+        if type(v) == "number" then return v end
+        return fallback
+    end
+
+    C:AddSlider(fctSection, {
+        label = LO["Lifetime"],
+        desc = LO["How long a number stays on screen, including its fade."],
+        min = 0.2, max = 2, step = 0.05,
+        width = 200,
+        getFunc = function() return FCTDefault("lifetime", 0.6) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").lifetime = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddSlider(fctSection, {
+        label = LO["Text Size"],
+        desc = LO["Font height of the numbers."],
+        min = 8, max = 32, step = 1,
+        width = 200,
+        getFunc = function() return FCTDefault("textSize", 16) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").textSize = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddSlider(fctSection, {
+        label = LO["Rise"],
+        desc = LO["Pixels the numbers drift upward over their lifetime. 0 keeps them still."],
+        min = 0, max = 60, step = 1,
+        width = 200,
+        getFunc = function() return FCTDefault("rise", 14) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").rise = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddSlider(fctSection, {
+        label = LO["Vertical Offset"],
+        desc = LO["Where the numbers start relative to the unit. Lower (more negative) sits them over the body."],
+        min = -150, max = 50, step = 5,
+        width = 200,
+        getFunc = function() return FCTDefault("offsetY", -70) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").offsetY = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddSlider(fctSection, {
+        label = LO["Horizontal Spread"],
+        desc = LO["How far numbers scatter sideways, so hits landing together stay readable."],
+        min = 0, max = 80, step = 2,
+        width = 200,
+        getFunc = function() return FCTDefault("offsetX", 28) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").offsetX = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddDropdown(fctSection, {
+        label = LO["Font Style"],
+        desc = LO["Outline adds a dark border to the numbers; shadow is softer and cheaper to read in motion."],
+        values = {
+            NONE = LO["None"],
+            OUTLINE = LO["Outline"],
+            THICKOUTLINE = LO["Thick Outline"],
+            SHADOW = LO["Shadow"],
+        },
+        getFunc = function()
+            local m = addon.db.profile.modules.combattext
+            local v = m and m.fontStyle
+            return (type(v) == "string" and v) or "THICKOUTLINE"
+        end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").fontStyle = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
     C:AddSpacer(scroll)
     local ttSection = C:AddSection(scroll, LO["Enhanced Tooltips"])
 
