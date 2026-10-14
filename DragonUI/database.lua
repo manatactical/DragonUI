@@ -1335,7 +1335,8 @@ local defaults = {
                 textSize = 16,  -- Font height of the number
                 verticalSpread = 16, -- Pixels the number drifts up or down over its lifetime (random +/-)
                 offsetX = 28,   -- Horizontal jitter around the anchor (0 = dead centre)
-                offsetY = -70,  -- Start offset from the anchor; negative is lower, over the body
+                offsetYPercent = -290, -- Percent of the plate's height below its centre (the plate floats over the head)
+                plateHeight = 24, -- Fallback plate height in pixels when the plate cannot be measured
                 fontStyle = "SHADOW", -- NONE | OUTLINE | THICKOUTLINE | SHADOW
                 showDamageTaken = false, -- Draw hits the player takes in red; off by default
             },

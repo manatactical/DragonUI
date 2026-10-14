@@ -669,12 +669,12 @@ local function BuildEnhancementsTab(scroll)
 
     C:AddSlider(fctSection, {
         label = LO["Vertical Offset"],
-        desc = LO["Where the numbers start relative to the unit. Lower (more negative) sits them over the body."],
-        min = -150, max = 50, step = 5,
+        desc = LO["Where the numbers start relative to the nameplate, as a percentage of its height. The plate floats above the unit's head, so a larger negative value drops the numbers onto the body."],
+        min = -600, max = 100, step = 10,
         width = 200,
-        getFunc = function() return FCTDefault("offsetY", -70) end,
+        getFunc = function() return FCTDefault("offsetYPercent", -290) end,
         setFunc = function(v)
-            EnsureModuleTable("combattext").offsetY = v
+            EnsureModuleTable("combattext").offsetYPercent = v
         end,
         disabled = function() return not IsEnabled("combattext") end,
     })

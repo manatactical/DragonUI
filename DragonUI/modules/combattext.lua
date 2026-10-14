@@ -19,7 +19,8 @@ local DEFAULTS = {
     textSize = 16,      -- font height
     verticalSpread = 16, -- drift is randomised within +/- this, so numbers go up or down
     offsetX = 28,       -- horizontal jitter around the anchor
-    offsetY = -70,      -- start below the plate's centre, over the body rather than the top of the head
+    offsetYPercent = -290, -- percent of the plate's height; negative sits below its centre, over the body
+    plateHeight = 24,   -- fallback plate height in pixels when the plate cannot be measured
     fontStyle = "SHADOW",
     showDamageTaken = false,  -- off by default: incoming hits are noise while you are watching your own
 }
@@ -104,37 +105,161 @@ end
 -- Two sources, in order: DragonUI's own nameplates module, whose GUID -> plate reverse map is exact,
 -- then the raw nameplate1..N unit tokens for a plate it has not bound yet. NPCs on the 3.3.5a server do
 -- carry nameplate tokens, so this catches packs and untargeted mobs too.
-local tokenCache = {}
+local tokenCache = {}                 -- guid -> { frame, token, at }; only positive results are stored
 local TOKEN_CACHE_TTL = 1
+
+-- The raw nameplate token still bound to a GUID, and the frame it owns. One UnitGUID call per token, so this
+-- is the expensive path and is only reached for a plate DragonUI has not identified yet.
+local function FindNameplateToken(guid)
+    for i = 1, 40 do
+        local token = "nameplate" .. i
+        if UnitExists(token) and UnitGUID(token) == guid then
+            return token, _G["NamePlate" .. i]
+        end
+    end
+end
+
+-- Is this frame still the plate of this GUID? O(1), no UnitGUID calls: DragonUI clears plateData.guid the
+-- moment it rebinds a plate to a different unit (NP.state.SetPlateGUID), so a plate whose guid no longer
+-- matches has been recycled. This is the check the per-frame path uses.
+local function PlateStillOwns(frame, guid)
+    local NP = addon.Nameplates
+    local state = NP and NP.state
+    local pd = state and state.GUIDToPlate and state.GUIDToPlate[guid]
+    if not pd or pd.plate ~= frame then return false end
+    return not pd.guid or pd.guid == guid
+end
 
 local function FindPlateFrame(guid)
     if not guid then return nil end
 
+    -- DragonUI's reverse map first. It is exact, and the ownership test is free, so the common case costs
+    -- nothing. Requiring a nameplate token to resolve is what wrongly sent numbers to the unit frames: this
+    -- client does not expose a resolvable token for every plate, so the common case must not depend on it.
     local NP = addon.Nameplates
     local state = NP and NP.state
     if state and state.GUIDToPlate then
         local pd = state.GUIDToPlate[guid]
         local frame = pd and pd.plate
-        if frame and frame.IsShown and frame:IsShown() then
+        if frame and frame.IsShown and frame:IsShown() and (not pd.guid or pd.guid == guid) then
             return frame
         end
     end
 
-    local cached = tokenCache[guid]
+    -- Not bound in DragonUI's map yet: sweep the raw tokens, with a short cache so a burst of numbers on the
+    -- same unbound plate does not search 40 tokens each time.
     local now = GetTime()
+    local cached = tokenCache[guid]
     if cached and (now - cached.at) < TOKEN_CACHE_TTL then
-        return cached.frame
+        local frame, token = cached.frame, cached.token
+        if frame and frame.IsShown and frame:IsShown()
+            and (not token or (UnitExists(token) and UnitGUID(token) == guid)) then
+            return frame
+        end
+        tokenCache[guid] = nil
     end
-    local found
-    for i = 1, 40 do
-        local unit = "nameplate" .. i
-        if UnitExists(unit) and UnitGUID(unit) == guid then
-            found = _G["NamePlate" .. i]
-            break
+
+    local foundToken, found = FindNameplateToken(guid)
+    -- Only a hit is cached. A miss must never stick: the plate can come back a moment later, and holding
+    -- "not found" for a second is what kept numbers off a target that had returned to the screen.
+    if found then
+        tokenCache[guid] = { frame = found, token = foundToken, at = now }
+    else
+        tokenCache[guid] = nil
+    end
+    return found
+end
+
+-- Last known on-screen position, per GUID.
+--
+-- On 3.3.5a the client hides a nameplate as soon as its unit leaves the camera -- there is no CVar or API
+-- to force it back (this client has no nameplate distance CVar at all, and looking away culls the plate
+-- regardless of distance). So a DoT ticking on a target the player has turned away from has no frame left
+-- to hang a number on. Rather than dropping the number or, worse, drawing it at screen centre (which in
+-- third person is where the player's own model sits, and is what put damage on the player), remember where
+-- the plate last was and keep using that spot for a short while.
+--
+-- Only GUIDs a number has actually spawned for are sampled, so the cost stays with the handful of units
+-- currently taking damage, not every plate on screen.
+local lastPos = {}                 -- guid -> { x, y, at }, in UIParent space
+local tracked = {}                 -- guid -> true, the sample set
+local LAST_POS_TTL = 3             -- how long a stale position stays usable, in seconds
+local SAMPLE_INTERVAL = 0.15
+
+-- GetCenter hands back screen coordinates measured from the screen's bottom-left, in the frame's own scale.
+-- A SetPoint offset is measured from the relative point of the frame it names, so a raw screen position used
+-- as an offset is off by UIParent's own centre -- a whole screen-width on a 1280-wide UI. Passing one through
+-- unchanged is what made a number leave the screen the instant its plate went away: it was drawn at the
+-- plate's coordinates *plus* the screen centre. Subtract the centre here, once, for every caller.
+local function ToUIParent(x, y, frame)
+    local ratio = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    local cx, cy = UIParent:GetCenter()
+    return x * ratio - (cx or 0), y * ratio - (cy or 0)
+end
+
+local function Sample(guid)
+    local frame = FindPlateFrame(guid)
+    if not (frame and frame.IsShown and frame:IsShown()) then return nil end
+    local x, y = frame:GetCenter()
+    if not (x and y) then return nil end
+    x, y = ToUIParent(x, y, frame)
+    lastPos[guid] = { x = x, y = y, at = GetTime() }
+    return x, y
+end
+
+local sampler = CreateFrame("Frame")
+sampler:Hide()
+local samplerElapsed = 0
+sampler:SetScript("OnUpdate", function(_, elapsed)
+    samplerElapsed = samplerElapsed + elapsed
+    if samplerElapsed < SAMPLE_INTERVAL then return end
+    samplerElapsed = 0
+    local now = GetTime()
+    for guid in pairs(tracked) do
+        if not Sample(guid) then
+            local p = lastPos[guid]
+            -- Stop tracking once the position is too old to trust: the plate is gone for good, or the unit
+            -- died or left. Without this the table grows for the whole session.
+            if not p or (now - p.at) > LAST_POS_TTL then
+                tracked[guid] = nil
+                lastPos[guid] = nil
+            end
         end
     end
-    tokenCache[guid] = { frame = found, at = now }
-    return found
+    if next(tracked) == nil then sampler:Hide() end
+end)
+
+-- Keeps a GUID's position warm while it is showing, and parks the sampler while nothing is tracked.
+local function Track(guid)
+    if not guid then return end
+    tracked[guid] = true
+    if not sampler:IsShown() then
+        samplerElapsed = 0
+        sampler:Show()
+    end
+end
+
+local function CachedPos(guid)
+    local p = guid and lastPos[guid]
+    if not p then return nil end
+    if (GetTime() - p.at) > LAST_POS_TTL then return nil end
+    return p.x, p.y
+end
+
+-- Screen pixels for the anchor plate's height. A plate whose Lua GetHeight is overridden mid-animation (see
+-- NP.layout.ApplyLiftClamp, which keeps the exact C++ method for that reason) would report a collapsed size,
+-- so the height DragonUI cached before sizing (_clickboxBaseH, or the module-wide native height) is preferred,
+-- then GetHeight, then the configured fallback.
+local function PlateHeightPx(guid, anchor)
+    if not anchor then return Setting("plateHeight") end
+    local NP = addon.Nameplates
+    local h = NP and NP.module and NP.module._clickboxNativeH
+    local pd = guid and NP and NP.state and NP.state.GUIDToPlate and NP.state.GUIDToPlate[guid]
+    if not h and pd then h = pd._clickboxBaseH end
+    if not h and anchor.GetHeight then h = anchor:GetHeight() end
+    if type(h) ~= "number" or h <= 0 then h = Setting("plateHeight") end
+    local ratio = anchor.GetEffectiveScale and anchor:GetEffectiveScale() or 1
+    return h * ratio
 end
 
 -- =============================================================================
@@ -188,10 +313,32 @@ local function OnUpdate(self, elapsed)
             self._pulseDone = true
         end
     end
-    -- Only the offset is rewritten: the frame keeps the anchor as its point, so a plate that is still
-    -- moving carries the number with it instead of leaving it behind (SetParent is not an option -- the
-    -- plates are protected, and reparenting from tainted code is refused in combat).
-    self:SetPoint("CENTER", self._anchor, "CENTER", x, y)
+
+    -- Re-resolve the anchor instead of trusting the frame captured at spawn. A nameplate frame is recycled by
+    -- the client, and a recycled plate is still *shown*, so an IsShown check alone cannot tell that it now
+    -- belongs to a different unit -- the number would visibly ride off with the stranger the client handed the
+    -- plate to. PlateStillOwns is O(1) and uses DragonUI's own GUID binding, so this costs no lookups per frame.
+    --
+    -- The number then dies with the plate, and that is deliberate. A dead unit has no GUID, token or plate left,
+    -- and 3.3.5a Lua has no world-to-screen projection, so a corpse's screen position cannot be recomputed. All
+    -- that is left is the fixed screen point it had at death, and a screen point is not a world point: run and
+    -- the whole HUD slides over the world while the corpse stays behind, so a held number visibly travels with
+    -- the player. Vanishing with the plate is the honest option -- never claims to mark a spot it cannot hold.
+    local anchor = self._anchor
+    if anchor and (not (anchor.IsShown and anchor:IsShown()) or not PlateStillOwns(anchor, self._guid)) then
+        self._anchor = nil
+    end
+    anchor = self._anchor
+    -- Drift applies either way. With an anchor gone the number keeps its rise-and-fade rather than being
+    -- pinned to a screen point, which would falsely suggest it marks the corpse.
+    if anchor then
+        self:SetPoint("CENTER", anchor, "CENTER", x, y)
+        -- Remember the spot while it is valid, so the frozen fallback lands where it last drew.
+        local ax, ay = anchor:GetCenter()
+        if ax and ay then self._originX, self._originY = ToUIParent(ax, ay, anchor) end
+    else
+        self:SetPoint("CENTER", UIParent, "CENTER", self._originX + x, self._originY + y)
+    end
     -- Fully opaque until the last FADE seconds, then a straight ramp to zero, so the number is readable
     -- for most of its life instead of dimming the whole time.
     local fadeStart = self._duration - FADE
@@ -225,16 +372,19 @@ local function Spawn(payload, kind, crit, guid, color)
     if type(payload) == "number" and payload <= 0 then return end
 
     -- Follow the victim's plate, so the number rides its 3D model. A plate that exists but is not shown
-    -- (out of range, or nameplates toggled off) still returns stale centre coords, so it must be dropped
-    -- here rather than at the draw.
+    -- (the unit left the camera, or nameplates are toggled off) still returns stale centre coords, so it
+    -- must be dropped here rather than at the draw.
     local anchor = FindPlateFrame(guid)
     if not (anchor and anchor.IsShown and anchor:IsShown()) then anchor = nil end
 
     local useFallback = false
-    if not anchor then
-        -- Unit frames are the only other thing that tracks a unit on screen. There is deliberately no
-        -- screen-centre fallback: in third person that spot is where the player's own model is drawn, so
-        -- a DoT ticking on a target the player has looked away from used to land on the player.
+    local staticX, staticY
+    if anchor then
+        -- On screen: keep its position warm for as long as numbers are landing on this unit.
+        Track(guid)
+    else
+        -- Off screen. Unit frames are the only other thing that tracks a unit; the client gives no way to
+        -- force a culled plate back, so the best remaining answer is where that plate last was.
         local frame
         if guid == UnitGUID("player") then
             frame = _G.PlayerFrame
@@ -245,17 +395,29 @@ local function Spawn(payload, kind, crit, guid, color)
         end
         if frame and frame.IsShown and frame:IsShown() then
             anchor, useFallback = frame, true
+        else
+            -- Last known plate position. There is deliberately no screen-centre fallback: in third person
+            -- that spot is where the player's own model is drawn, which is exactly how a DoT on a mob the
+            -- player had looked away from ended up appearing on the player.
+            staticX, staticY = CachedPos(guid)
+            if staticX then useFallback = true end
         end
     end
 
-    -- Nothing on screen represents this unit, so the hit has nowhere honest to be drawn. Dropping it is
-    -- right: a number parked anywhere else would be lying about which unit took the damage.
-    if not anchor then return end
+    -- Nothing on screen represents this unit and it has never been seen, so the hit has nowhere honest to
+    -- be drawn. Dropping it beats a number that lies about which unit took the damage.
+    if not anchor and not staticX then return end
 
     local f = Acquire()
     -- Read per spawn so an options change applies to the next number, with no reload.
     local vSpread, size = Setting("verticalSpread"), Setting("textSize")
-    local spreadX, spreadY = Setting("offsetX"), Setting("offsetY")
+    -- The plate floats in world space above the unit's head, so the gap down to the model has to be a
+    -- fraction of the plate: a zoom-scaled plate (NP.layout.SetRetailPlateScale) is pushed further up in
+    -- screen terms, and a fixed pixel gap would leave the number sitting above the target's head instead of
+    -- on its body. Scaling by height keeps the number over the model at any plate size or zoom.
+    local plateH = PlateHeightPx(guid, anchor)
+    local spreadX = Setting("offsetX")
+    local spreadY = plateH * (Setting("offsetYPercent") / 100)
     local style = Setting("fontStyle")
     if style == "SHADOW" then
         -- SHADOW is not a flag string, so the font takes no flags and the offset supplies the effect.
@@ -272,6 +434,19 @@ local function Spawn(payload, kind, crit, guid, color)
     -- the number still rides a plate that is moving. Crits get no spread at all, so the big number always
     -- lands on the unit rather than drifting off it.
     f._anchor = anchor
+    f._guid = guid
+    -- Seed the freeze point from the anchor's own position when there is one. Offsets are measured from that
+    -- point, so if the anchor dies mid-life the number holds the exact spot it was last drawn at instead of
+    -- snapping to UIParent coordinates (0,0 originally, i.e. somewhere off the bottom-left of the screen).
+    f._originX, f._originY = staticX or 0, staticY or 0
+    if anchor then
+        -- Center-relative, not raw screen coordinates: this is the spot the number holds on to once its
+        -- plate is gone, so it has to be in the space the UIParent fallback draws in.
+        local ax, ay = anchor:GetCenter()
+        if ax and ay then f._originX, f._originY = ToUIParent(ax, ay, anchor) end
+    end
+    f._elapsed, f._duration = 0, Setting("lifetime")
+    -- Crits get no spread so the big number lands on the unit.
     if crit then
         f._sx, f._sy = 0, spreadY
         f._dx, f._dy = 0, spreadY
@@ -280,7 +455,6 @@ local function Spawn(payload, kind, crit, guid, color)
         f._dx, f._dy = f._sx + math.random(-spreadX, spreadX),
             spreadY + math.random(-vSpread, vSpread)
     end
-    f._elapsed, f._duration = 0, Setting("lifetime")
     f.text:SetText(type(payload) == "string" and payload or tostring(payload))
     local c = color or COLORS[kind]
     f.text:SetTextColor(c[1], c[2], c[3])
@@ -302,11 +476,16 @@ local function Spawn(payload, kind, crit, guid, color)
     f:SetScale(crit and scale * CRIT_GROW_FROM or scale)
     f:SetAlpha(1)
     f:ClearAllPoints()
-    f:SetPoint("CENTER", anchor, "CENTER", f._sx, f._sy)
+    if anchor then
+        f:SetPoint("CENTER", anchor, "CENTER", f._sx, f._sy)
+    else
+        f:SetPoint("CENTER", UIParent, "CENTER", f._originX + f._sx, f._originY + f._sy)
+    end
     f:SetScript("OnUpdate", OnUpdate)
     f:Show()
     lastSpawn = { amount = payload, kind = kind, crit = crit, guid = guid,
-        anchored = anchor ~= nil, fallback = useFallback, anchor = anchor and anchor.GetName and anchor:GetName() }
+        anchored = anchor ~= nil, fallback = useFallback, cached = (not anchor) and staticX ~= nil,
+        anchor = anchor and anchor.GetName and anchor:GetName() }
 end
 
 -- POC diagnostic: /run DragonUI.CombatTextDebug()
@@ -314,9 +493,10 @@ end
 function addon.CombatTextDebug()
     local function dump(label, t)
         if not t then print(label, "(none)") return end
-        print(string.format("%s amount=%s kind=%s crit=%s guid=%s anchored=%s fallback=%s anchor=%s",
+        print(string.format("%s amount=%s kind=%s crit=%s guid=%s anchored=%s fallback=%s cachedPos=%s anchor=%s",
             label, tostring(t.amount), tostring(t.kind), tostring(t.crit),
-            tostring(t.guid), tostring(t.anchored), tostring(t.fallback), tostring(t.anchor)))
+            tostring(t.guid), tostring(t.anchored), tostring(t.fallback), tostring(t.cached),
+            tostring(t.anchor)))
     end
     dump("[FCT] last spawn:", lastSpawn)
     print("[FCT] applied=", tostring(CombatText.applied),
@@ -504,6 +684,11 @@ end
 function addon.RestoreCombatTextSystem()
     CombatText.applied = false
     RestoreBlizzardFCT()
+    -- Stop the sampler with the module: it belongs to the feature, and no position can be trusted across
+    -- the gap while the module is off.
+    sampler:Hide()
+    for guid in pairs(tracked) do tracked[guid] = nil end
+    for guid in pairs(lastPos) do lastPos[guid] = nil end
     for _, f in ipairs(pool) do
         f:Hide()
     end
