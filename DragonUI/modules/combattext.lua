@@ -44,6 +44,9 @@ local CRIT_GROW_DURATION = 0.06
 local CRIT_GROW_FROM = 0.4
 -- Spells and companion hits (the yellow numbers) read 20% larger than the player's own auto attacks.
 local SPELL_BOOST = 1.2
+-- The player's own auto attacks (white) are the most numerous number on screen, so they read a little
+-- smaller than everything else to keep a burst from drowning out the heals and spells.
+local PHYSICAL_SCALE = 0.9
 
 local function Setting(key)
     local modules = addon.db and addon.db.profile and addon.db.profile.modules
@@ -509,7 +512,8 @@ local function Spawn(payload, kind, crit, guid, color)
     -- Yellow reads larger, and a crit multiplies on top of that rather than replacing it, so a crit spell
     -- is still visibly bigger than a crit auto attack.
     local scale = crit and CRIT_SCALE or 1
-    if c == COLORS.spell then scale = scale * SPELL_BOOST end
+    if c == COLORS.spell then scale = scale * SPELL_BOOST
+    elseif c == COLORS.physical then scale = scale * PHYSICAL_SCALE end
     f._baseScale = scale
     -- Only crits pulse; resetting the flag each spawn stops a pooled non-crit inheriting the last one's.
     f._pulse = crit or false
