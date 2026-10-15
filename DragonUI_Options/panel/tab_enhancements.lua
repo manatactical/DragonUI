@@ -680,6 +680,18 @@ local function BuildEnhancementsTab(scroll)
     })
 
     C:AddSlider(fctSection, {
+        label = LO["Plate Height"],
+        desc = LO["Height in pixels assumed for a nameplate that cannot be measured. Only the fallback for the vertical offset."],
+        min = 8, max = 64, step = 1,
+        width = 200,
+        getFunc = function() return FCTDefault("plateHeight", 24) end,
+        setFunc = function(v)
+            EnsureModuleTable("combattext").plateHeight = v
+        end,
+        disabled = function() return not IsEnabled("combattext") end,
+    })
+
+    C:AddSlider(fctSection, {
         label = LO["Horizontal Spread"],
         desc = LO["How far numbers scatter sideways, so hits landing together stay readable."],
         min = 0, max = 80, step = 2,

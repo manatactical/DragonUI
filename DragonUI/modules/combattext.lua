@@ -136,16 +136,24 @@ local function FindNameplateToken(guid)
     end
 end
 
--- Is this frame still the plate of this GUID? O(1), no UnitGUID calls: DragonUI clears plateData.guid the
--- moment it rebinds a plate to a different unit (NP.state.SetPlateGUID), so a plate whose guid no longer
--- matches has been recycled. This is the check the per-frame path uses.
+-- Is this frame still the plate of this GUID? DragonUI clears plateData.guid the moment it rebinds a plate to
+-- a different unit (NP.state.SetPlateGUID), so a plate whose guid no longer matches has been recycled. A plate
+-- resolved through the raw-token path is not in that map at all, so its token is the only thing that tells it
+-- apart from a plate the client recycled for a stranger -- one UnitGUID call, and only for that path.
 local function PlateStillOwns(frame, guid)
     local NP = addon.Nameplates
     local state = NP and NP.state
     local pd = state and state.GUIDToPlate and state.GUIDToPlate[guid]
-    if not pd or pd.plate ~= frame then return false end
-    return not pd.guid or pd.guid == guid
+    if pd then
+        if pd.plate ~= frame then return false end
+        return not pd.guid or pd.guid == guid
+    end
+    -- Not in the map: it was resolved by raw token, and tokenCache holds that token for the number's lifetime.
+    local token = tokenCache[guid] and tokenCache[guid].token
+    if token then return UnitExists(token) and UnitGUID(token) == guid end
+    return false
 end
+
 
 -- The unit frames that stand for a unit the client gives no plate: player, target, focus, pet, and the four
 -- party frames. A friendly unit usually has none -- friendly plates are off by default -- so without this a
@@ -284,8 +292,17 @@ end
 -- NP.layout.ApplyLiftClamp, which keeps the exact C++ method for that reason) would report a collapsed size,
 -- so the height DragonUI cached before sizing (_clickboxBaseH, or the module-wide native height) is preferred,
 -- then GetHeight, then the configured fallback.
-local function PlateHeightPx(guid, anchor)
+local function PlateHeightPx(guid, anchor, unitFrameAnchor)
     if not anchor then return Setting("plateHeight") end
+    -- A unit frame is not a plate: offsetYPercent is a fraction of the *plate* that floats over the model, so
+    -- on the unit-frame fallback the frame's own height is the only meaningful scale. Falling through to the
+    -- cached clickbox would offset the number by an element that is not on screen at all.
+    if unitFrameAnchor then
+        local h = anchor.GetHeight and anchor:GetHeight()
+        if type(h) ~= "number" or h <= 0 then h = Setting("plateHeight") end
+        local r = anchor.GetEffectiveScale and anchor:GetEffectiveScale() or 1
+        return h * r
+    end
     local NP = addon.Nameplates
     local h = NP and NP.module and NP.module._clickboxNativeH
     local pd = guid and NP and NP.state and NP.state.GUIDToPlate and NP.state.GUIDToPlate[guid]
@@ -317,6 +334,10 @@ local lastSpawn
 local rawSeen, rawDamage = 0, 0
 
 local function Release(f)
+    -- Guarded: a number that expired on its own is released by OnUpdate, and the live-entry sweep in
+    -- RestoreCombatTextSystem would otherwise hand the same frame to the pool twice.
+    if not f._inFlight then return end
+    f._inFlight = nil
     -- OnUpdate keeps firing on a hidden frame on 3.3.5a; leaving it attached makes a released
     -- frame age out a second time and push itself into the pool again, so Acquire hands the same
     -- frame to two spawns and one overwrites the other. Detach it instead.
@@ -371,7 +392,10 @@ local function OnUpdate(self, elapsed)
     -- the whole HUD slides over the world while the corpse stays behind, so a held number visibly travels with
     -- the player. Vanishing with the plate is the honest option -- never claims to mark a spot it cannot hold.
     local anchor = self._anchor
-    if anchor and (not (anchor.IsShown and anchor:IsShown()) or not PlateStillOwns(anchor, self._guid)) then
+    -- A unit-frame fallback is bound to a fixed unit token and is never recycled by the client, so its
+    -- ownership cannot be stolen; only plates need the check.
+    if anchor and not self._unitFrameAnchor
+        and (not (anchor.IsShown and anchor:IsShown()) or not PlateStillOwns(anchor, self._guid)) then
         self._anchor = nil
     end
     anchor = self._anchor
@@ -460,7 +484,7 @@ local function Spawn(payload, kind, crit, guid, color)
     -- fraction of the plate: a zoom-scaled plate (NP.layout.SetRetailPlateScale) is pushed further up in
     -- screen terms, and a fixed pixel gap would leave the number sitting above the target's head instead of
     -- on its body. Scaling by height keeps the number over the model at any plate size or zoom.
-    local plateH = PlateHeightPx(guid, anchor)
+    local plateH = PlateHeightPx(guid, anchor, useFallback)
     local spreadX = Setting("offsetX")
     local spreadY = plateH * (Setting("offsetYPercent") / 100)
     local style = Setting("fontStyle")
@@ -479,6 +503,7 @@ local function Spawn(payload, kind, crit, guid, color)
     -- the number still rides a plate that is moving. Crits get no spread at all, so the big number always
     -- lands on the unit rather than drifting off it.
     f._anchor = anchor
+    f._unitFrameAnchor = useFallback
     f._guid = guid
     -- Seed the freeze point from the anchor's own position when there is one. Offsets are measured from that
     -- point, so if the anchor dies mid-life the number holds the exact spot it was last drawn at instead of
@@ -507,51 +532,64 @@ local function Spawn(payload, kind, crit, guid, color)
     local tw, th = f.text:GetStringWidth(), f.text:GetStringHeight()
     f:SetSize(tw, th)
 
-    -- Keep the new number clear of the ones already on screen, by pushing it up past the slot they occupy. The
-    -- drift already fans a burst out over its life, so only the opening moments can collide -- and those are
-    -- exactly the ones a shared spawn point makes unreadable. Expired entries are dropped in the same pass.
-    local ox, oy = f._originX + f._dx, f._originY + f._dy
-    local now = GetTime()
-    local step = th + 2
-    local moved = true
-    while moved do
-        moved = false
-        for i = #live, 1, -1 do
-            local o = live[i]
-            if (now - o.at) > o.duration then
-                table.remove(live, i)
-            elseif math.abs(ox - o.x) < tw and math.abs(oy - o.y) < step then
-                oy = oy + step
-                moved = true
-            end
-        end
-    end
-    live[#live + 1] = { x = ox, y = oy, at = now, duration = f._duration }
-    f._dy = oy - f._originY
     -- Yellow reads larger, and a crit multiplies on top of that rather than replacing it, so a crit spell
     -- is still visibly bigger than a crit auto attack.
     local scale = crit and CRIT_SCALE or 1
     if c == COLORS.spell then scale = scale * SPELL_BOOST
     elseif c == COLORS.physical then scale = scale * PHYSICAL_SCALE end
     f._baseScale = scale
-    -- Only crits pulse; resetting the flag each spawn stops a pooled non-crit inheriting the last one's.
-    f._pulse = crit or false
-    f._pulseDone = false
     -- A crit starts at its small size, so the very first rendered frame is already growing instead of
     -- flashing at full size for a frame and then snapping down.
     f:SetScale(crit and scale * CRIT_GROW_FROM or scale)
+    local now = GetTime()
+    local moved = true
+    -- Keep the new number clear of the ones already on screen, by pushing it up past the slot they occupy. The
+    -- drift already fans a burst out over its life, so only the opening moments can collide -- and those are
+    -- exactly the ones a shared spawn point makes unreadable. Expired entries are dropped in the same pass.
+    -- Both sides of the test are in UIParent units: _origin came from ToUIParent, and a SetPoint offset of d
+    -- lands d UIParent units out whatever the frame's scale. GetStringWidth is font units, so the box needs
+    -- the number's own scale; a crit is sized at its final scale, which is what it settles at.
+    local boxW, boxH = tw * scale, th * scale + 2
+    local ox, oy = f._originX + f._dx, f._originY + f._dy
+    while moved do
+        moved = false
+        for i = #live, 1, -1 do
+            local o = live[i]
+            if (now - o.at) > o.duration then
+                table.remove(live, i)
+            elseif math.abs(ox - o.x) < boxW and math.abs(oy - o.y) < boxH then
+                oy = oy + boxH
+                moved = true
+            end
+        end
+    end
+    live[#live + 1] = { x = ox, y = oy, at = now, duration = f._duration, frame = f }
+    -- Written back to the spawn point as well as the drift destination: a pulsing crit is pinned to _sy and
+    -- never reads _dy, so de-conflicting only _dy left simultaneous crits stacked exactly on each other.
+    local newDy = oy - f._originY
+    f._sy = f._sy + (newDy - f._dy)
+    f._dy = newDy
+    -- Only crits pulse; resetting the flag each spawn stops a pooled non-crit inheriting the last one's.
+    f._pulse = crit or false
+    f._pulseDone = false
     f:SetAlpha(1)
     f:ClearAllPoints()
+    -- Divided by the frame's current scale, exactly as OnUpdate does: a SetPoint offset is measured in the
+    -- frame's scale, so an undivided one starts smaller for a crit (scaled to CRIT_GROW_FROM) and slides as
+    -- it grows. OnUpdate divides every frame, so the number then holds the same UIParent point throughout.
+    local sc = f:GetScale()
+    if not sc or sc <= 0 then sc = 1 end
     if anchor then
-        f:SetPoint("CENTER", anchor, "CENTER", f._sx, f._sy)
+        f:SetPoint("CENTER", anchor, "CENTER", f._sx / sc, f._sy / sc)
     else
-        f:SetPoint("CENTER", UIParent, "CENTER", f._originX + f._sx, f._originY + f._sy)
+        f:SetPoint("CENTER", UIParent, "CENTER", f._originX + f._sx / sc, f._originY + f._sy / sc)
     end
+    f._inFlight = true
     f:SetScript("OnUpdate", OnUpdate)
     f:Show()
     lastSpawn = { amount = payload, kind = kind, crit = crit, guid = guid,
         anchored = anchor ~= nil, fallback = useFallback, cached = (not anchor) and staticX ~= nil,
-        anchorKind = anchor and "plate" or "cachedPos",
+        anchorKind = anchor and (useFallback and "unitFrame" or "plate") or "cachedPos",
         anchor = anchor and anchor.GetName and anchor:GetName() }
 end
 
@@ -665,60 +703,48 @@ local MISS_TEXT = {
 
 local GREY = { 0.7, 0.7, 0.7 }
 
--- Shared by every event: the combat log is hot, one scratch table beats one allocation per line.
-local scratch = {}
-
+-- Repeated select() scans a vararg from the start, so reading n arguments that way is O(n^2) on the hottest
+-- event in the game. `{ ... }` copies them in one pass; the offsets below are fixed, so this is the scratch
+-- buffer the rest of the function reads.
 local function OnCombatLog(...)
     -- The frame is registered at load and stays registered: the registry has no unsubscribe, so the module
     -- has to gate itself. Without this, disabling the module restored Blizzard's fct CVars *and* kept drawing
     -- our own numbers on top -- two combat texts at once, which is what "disable it" must never do.
     if not CombatText.applied then return end
     rawSeen = rawSeen + 1
-    local n = select("#", ...)
-    for i = 1, n do scratch[i] = select(i, ...) end
+    local a = { ... }
 
-    local eventType = scratch[2]
-    local sourceGUID = scratch[3]
-    local destGUID = scratch[6]
-
+    local eventType = a[2]
+    local sourceGUID = a[3]
+    local destGUID = a[6]
     -- Anything another player did or took is not ours to draw.
-    if not (IsMine(sourceGUID) or IsMine(destGUID)) then
-        for i = 1, n do scratch[i] = nil end
-        return
-    end
+    if not (IsMine(sourceGUID) or IsMine(destGUID)) then return end
 
     local amount, crit, kind, text, isHeal
     local suffix = eventType:match("_(%w+)$")
     if eventType == "SWING_DAMAGE" then
-        amount, crit, kind = scratch[SWING_AMOUNT], scratch[SWING_CRIT], "damage"
+        amount, crit, kind = a[SWING_AMOUNT], a[SWING_CRIT], "damage"
     elseif suffix == "HEAL" then
         -- Whole absorbed heals also report nil here; they are dropped, not shown as 0.
-        amount, crit, kind, isHeal = scratch[HEAL_AMOUNT], scratch[HEAL_CRIT], "heal", true
+        amount, crit, kind, isHeal = a[HEAL_AMOUNT], a[HEAL_CRIT], "heal", true
     elseif suffix == "MISSED" then
         -- The miss is at the family's own offset, and the absorbed amount always follows it directly.
         local missAt = eventType == "SWING_MISSED" and SWING_AMOUNT or SPELL_MISS_TYPE
-        local missType = scratch[missAt]
-        amount = scratch[missAt + 1]
+        local missType = a[missAt]
+        amount = a[missAt + 1]
         kind = "spell"
         if missType then text = MISS_TEXT[missType] or missType end
     elseif eventType == "RANGE_DAMAGE" or eventType == "SPELL_DAMAGE"
         or eventType == "SPELL_PERIODIC_DAMAGE" or eventType == "DAMAGE_SHIELD"
         or eventType == "DAMAGE_SPLIT" then
-        amount, crit, kind = scratch[SPELL_AMOUNT], scratch[SPELL_CRIT], "spell"
+        amount, crit, kind = a[SPELL_AMOUNT], a[SPELL_CRIT], "spell"
     else
         return
     end
-
-    -- destGUID is read out before the scratch table is cleared, or it goes nil with it.
-    for i = 1, n do scratch[i] = nil end
-
     -- Healing is Blizzard's job now (see NATIVE_HEAL_CVARS): its numbers ride the unit in the world, which is
     -- the one thing this module cannot do for a friendly target. Running our own heal path as well would draw
     -- the same heal twice.
-    if isHeal then
-        for i = 1, n do scratch[i] = nil end
-        return
-    end
+    if isHeal then return end
 
     -- A miss with words is drawn as words. A miss with no words and no positive amount is a fully absorbed
     -- hit, which has no useful payload at all, so it is dropped rather than shown as a bare 0.
@@ -846,8 +872,10 @@ function addon.RestoreCombatTextSystem()
     sampler:Hide()
     for guid in pairs(tracked) do tracked[guid] = nil end
     for guid in pairs(lastPos) do lastPos[guid] = nil end
+    -- In-flight numbers are torn down, not just the pool: release their frames (which also detaches
+    -- OnUpdate), leave the pool holding every frame, and drop the token cache with them -- a cached plate
+    -- reference must not survive into the next enable.
+    for _, entry in ipairs(live) do Release(entry.frame) end
     for i = #live, 1, -1 do live[i] = nil end
-    for _, f in ipairs(pool) do
-        f:Hide()
-    end
+    for guid in pairs(tokenCache) do tokenCache[guid] = nil end
 end
