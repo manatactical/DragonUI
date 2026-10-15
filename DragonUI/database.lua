@@ -21,6 +21,7 @@ local defaults = {
         questLootLearned = {}, -- Learned quest loot sources for nameplates: [mobName] = {objectiveText=true}
         talentBuilds = {}, -- Saved talent builds per class: [CLASS] = { {name, ranks[tab][index], reqLevel}, ... }
         auraDurations = {}, -- Observed debuff durations for nameplates: [spellId] = seconds
+        combatTextCVars = false, -- Blizzard fct CVars saved before Floating Combat Text zeroed them; false = none saved
         addonIcons = {}, -- Addon manager icons learned from loaded addons: [lowercase folder] = { icon, coords }
         optionsPanelScale = 1 -- Settings window scale on top of the UI scale
     },

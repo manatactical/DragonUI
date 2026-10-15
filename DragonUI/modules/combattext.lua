@@ -2,8 +2,10 @@
 
 -- =============================================================================
 -- Floating Combat Text
--- Damage and healing numbers drawn above the unit they land on, replacing
--- Blizzard's own floating combat text (whose fct CVars are zeroed while this is on).
+-- Damage numbers drawn above the unit they land on, replacing Blizzard's own floating combat text (whose
+-- fct CVars are zeroed while this is on). Healing is deliberately left to Blizzard's own combat text: a heal
+-- on a friendly unit has no plate of ours to ride, and 3.3.5a Lua cannot project a world position to the
+-- screen, so Blizzard -- whose text does hang off the unit -- does that half. See NATIVE_HEAL_CVARS.
 -- =============================================================================
 
 local addon = select(2, ...)
@@ -66,6 +68,14 @@ local FCT_CVARS = {
     "fctComboPoints", "fctFriendlyHealers", "fctReactives", "fctRepChanges",
     "fctDamageReduction", "fctDodgeParryMiss", "fctCombatState",
 }
+
+-- Healing is left to Blizzard's own floating combat text rather than drawn by this module. Its numbers ride
+-- the unit in the world, which is exactly what this module cannot do for a friendly target: a heal on a pet
+-- or ally has no plate of ours to hang from, and 3.3.5a Lua has no world-to-screen projection to fake one.
+-- These are forced back on after the loop above zeroes them -- enableCombatText is the master switch for all
+-- of Blizzard's combat text, so it has to be on for any heal number to appear at all. The damage switches
+-- stay off, so only healing is left to Blizzard and nothing is drawn twice.
+local NATIVE_HEAL_CVARS = { "enableCombatText", "CombatHealing", "fctFriendlyHealers" }
 
 -- A CVar this client does not carry raises a Lua error on both GetCVar and SetCVar on 3.3.5a
 -- ("Couldn't find CVar named ..."), not a silent no-op, so both are probed.
@@ -135,6 +145,23 @@ local function PlateStillOwns(frame, guid)
     local pd = state and state.GUIDToPlate and state.GUIDToPlate[guid]
     if not pd or pd.plate ~= frame then return false end
     return not pd.guid or pd.guid == guid
+end
+
+-- The unit frames that stand for a unit the client gives no plate: player, target, focus, pet, and the four
+-- party frames. A friendly unit usually has none -- friendly plates are off by default -- so without this a
+-- number on one has nothing to ride. Party frames bind by token, not by a unit an addon can read, so the GUID
+-- has to be compared; the fixed units are a plain lookup.
+local FIXED_UNIT_FRAMES = { player = "PlayerFrame", target = "TargetFrame", focus = "FocusFrame", pet = "PetFrame" }
+
+local function FixedUnitFrame(guid)
+    if not guid then return nil end
+    for unit, frameName in pairs(FIXED_UNIT_FRAMES) do
+        if UnitExists(unit) and UnitGUID(unit) == guid then return _G[frameName] end
+    end
+    for i = 1, 4 do
+        if UnitExists("party" .. i) and UnitGUID("party" .. i) == guid then return _G["PartyMemberFrame" .. i] end
+    end
+    return nil
 end
 
 local function FindPlateFrame(guid)
@@ -276,7 +303,6 @@ end
 local COLORS = {
     physical = { 1, 1, 1 },        -- auto attacks: white
     spell    = { 1, 0.85, 0.2 },   -- spells and anything a companion lands: yellow
-    heal     = { 0.25, 1, 0.4 },
 }
 
 local RED = { 1, 0.25, 0.25 }      -- damage the player takes
@@ -411,14 +437,7 @@ local function Spawn(payload, kind, crit, guid, color)
     else
         -- Off screen. Unit frames are the only other thing that tracks a unit; the client gives no way to
         -- force a culled plate back, so the best remaining answer is where that plate last was.
-        local frame
-        if guid == UnitGUID("player") then
-            frame = _G.PlayerFrame
-        elseif guid == UnitGUID("target") then
-            frame = _G.TargetFrame
-        elseif guid == UnitGUID("focus") then
-            frame = _G.FocusFrame
-        end
+        local frame = FixedUnitFrame(guid)
         if frame and frame.IsShown and frame:IsShown() then
             anchor, useFallback = frame, true
         else
@@ -532,6 +551,7 @@ local function Spawn(payload, kind, crit, guid, color)
     f:Show()
     lastSpawn = { amount = payload, kind = kind, crit = crit, guid = guid,
         anchored = anchor ~= nil, fallback = useFallback, cached = (not anchor) and staticX ~= nil,
+        anchorKind = anchor and "plate" or "cachedPos",
         anchor = anchor and anchor.GetName and anchor:GetName() }
 end
 
@@ -540,10 +560,10 @@ end
 function addon.CombatTextDebug()
     local function dump(label, t)
         if not t then print(label, "(none)") return end
-        print(string.format("%s amount=%s kind=%s crit=%s guid=%s anchored=%s fallback=%s cachedPos=%s anchor=%s",
+        print(string.format("%s amount=%s kind=%s crit=%s guid=%s anchored=%s fallback=%s cachedPos=%s anchorKind=%s anchor=%s",
             label, tostring(t.amount), tostring(t.kind), tostring(t.crit),
             tostring(t.guid), tostring(t.anchored), tostring(t.fallback), tostring(t.cached),
-            tostring(t.anchor)))
+            tostring(t.anchorKind), tostring(t.anchor)))
     end
     dump("[FCT] last spawn:", lastSpawn)
     print("[FCT] applied=", tostring(CombatText.applied),
@@ -557,6 +577,44 @@ function addon.CombatTextDebug()
         print("[FCT] plate for that guid=", tostring(pd and pd.plate and pd.plate:GetName()))
     end
     print("[FCT] CLEU seen=", tostring(rawSeen), "damageSeen=", tostring(rawDamage))
+end
+
+-- Diagnostic: /run DragonUI.CombatTextPlates()
+-- What Blizzard's own combat text has to work with: the fct CVars this module forces on, and whether the
+-- nameplate module is registering plates at all.
+function addon.CombatTextPlates()
+    local NP = addon.Nameplates
+    local plates = NP and NP.module and NP.module.plates
+    if not plates then
+        print("[FCT] nameplates module not available")
+        return
+    end
+    local function scan(unit)
+        if not UnitExists(unit) then print(string.format("[FCT] %s: does not exist", unit)) return end
+        local guid = UnitGUID(unit)
+        local pd = NP.state.GUIDToPlate and NP.state.GUIDToPlate[guid]
+        print(string.format("[FCT] %s: guid=%s plateInGUIDMap=%s plateName=%s", unit, tostring(guid),
+            tostring(pd ~= nil), tostring(pd and pd.plateName)))
+    end
+    scan("player")
+    scan("pet")
+    scan("party1")
+    scan("target")
+    local n = 0
+    for key, pd in pairs(plates) do
+        n = n + 1
+        local plate = pd and pd.plate
+        print(string.format("[FCT] plate %d: key=%s name=%s shown=%s guid=%s reaction=%s", n,
+            tostring(key ~= nil), tostring(pd and pd.plateName),
+            tostring(plate and plate.IsShown and plate:IsShown()),
+            tostring(pd and pd.guid),
+            tostring(NP.native_style and NP.native_style.GetPlateReaction and NP.native_style.GetPlateReaction(pd))))
+    end
+    print("[FCT] registered plates total=", tostring(n))
+    for _, name in ipairs(NATIVE_HEAL_CVARS) do
+        print(string.format("[FCT] native heal cvar %s=%s (1 means Blizzard draws the heal numbers)",
+            name, tostring(ReadCVar(name))))
+    end
 end
 
 -- POC diagnostic: /run DragonUI.CombatTextTest()
@@ -611,6 +669,10 @@ local GREY = { 0.7, 0.7, 0.7 }
 local scratch = {}
 
 local function OnCombatLog(...)
+    -- The frame is registered at load and stays registered: the registry has no unsubscribe, so the module
+    -- has to gate itself. Without this, disabling the module restored Blizzard's fct CVars *and* kept drawing
+    -- our own numbers on top -- two combat texts at once, which is what "disable it" must never do.
+    if not CombatText.applied then return end
     rawSeen = rawSeen + 1
     local n = select("#", ...)
     for i = 1, n do scratch[i] = select(i, ...) end
@@ -650,6 +712,14 @@ local function OnCombatLog(...)
     -- destGUID is read out before the scratch table is cleared, or it goes nil with it.
     for i = 1, n do scratch[i] = nil end
 
+    -- Healing is Blizzard's job now (see NATIVE_HEAL_CVARS): its numbers ride the unit in the world, which is
+    -- the one thing this module cannot do for a friendly target. Running our own heal path as well would draw
+    -- the same heal twice.
+    if isHeal then
+        for i = 1, n do scratch[i] = nil end
+        return
+    end
+
     -- A miss with words is drawn as words. A miss with no words and no positive amount is a fully absorbed
     -- hit, which has no useful payload at all, so it is dropped rather than shown as a bare 0.
     if type(amount) ~= "number" then amount = nil end
@@ -667,8 +737,6 @@ local function OnCombatLog(...)
     local color
     if text then
         color = GREY
-    elseif isHeal then
-        color = COLORS.heal
     elseif incoming then
         color = RED
     elseif eventType == "SWING_DAMAGE" and sourceGUID == UnitGUID("player") then
@@ -688,21 +756,51 @@ end
 
 local savedCVars
 
+-- The snapshot is written to the saved profile, not just kept in memory. The module toggle asks for a UI
+-- reload, and a reload wipes every local in this file: the CVars we zeroed would then be restored from
+-- nothing, so turning the module off would leave Blizzard's floating combat text permanently disabled.
+local function SaveCVarSnapshot(snapshot)
+    local db = addon.db
+    if not (db and db.global) then return end
+    db.global.combatTextCVars = snapshot
+end
+
+local function LoadCVarSnapshot()
+    local db = addon.db
+    return db and db.global and db.global.combatTextCVars
+end
+
 local function HideBlizzardFCT()
+    if not savedCVars then
+        -- A surviving snapshot means a previous session zeroed these and never restored them: keep the
+        -- player's original values rather than re-reading our own zeroes as if they were their settings.
+        savedCVars = LoadCVarSnapshot()
+    end
     if not savedCVars then
         savedCVars = {}
         for _, name in ipairs(FCT_CVARS) do
-            savedCVars[name] = ReadCVar(name)
+            local value = ReadCVar(name)
+            -- An absent CVar is recorded as false, not nil: nil would read as "no snapshot" next time and
+            -- send us back here, overwriting the good values with our own zeroes.
+            savedCVars[name] = value or false
         end
+        SaveCVarSnapshot(savedCVars)
     end
     for _, name in ipairs(FCT_CVARS) do
         SetCVarIfKnown(name, 0)
     end
+    for _, name in ipairs(NATIVE_HEAL_CVARS) do
+        SetCVarIfKnown(name, 1)
+    end
 end
 
 local function RestoreBlizzardFCT()
-    if not savedCVars then return end
-    for name, value in pairs(savedCVars) do
+    local snapshot = savedCVars or LoadCVarSnapshot()
+    if not snapshot then return end
+    savedCVars = nil
+    SaveCVarSnapshot(nil)
+    for name, value in pairs(snapshot) do
+        -- false means the client has no such CVar; nothing to put back.
         if value then SetCVarIfKnown(name, value) end
     end
 end
@@ -715,8 +813,17 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         OnCombatLog(...)
-    elseif event == "PLAYER_ENTERING_WORLD" and CombatText.applied then
-        HideBlizzardFCT()
+    -- A reload with the module enabled re-hides on entering world, which is the only moment a fct CVar could
+    -- have been reset behind our back. Guarded on `applied` so a disabled module never touches Blizzard's.
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if CombatText.applied then
+            HideBlizzardFCT()
+        else
+            -- Disabled, but a previous session may have zeroed the fct CVars and never restored them. The
+            -- snapshot in the profile is the only record of the player's originals, so put it back. No
+            -- snapshot means the module never touched them and this does nothing.
+            RestoreBlizzardFCT()
+        end
     end
 end)
 
@@ -728,6 +835,9 @@ function addon.ApplyCombatTextSystem()
     HideBlizzardFCT()
 end
 
+-- A disabled module must still leave Blizzard's floating combat text alone. The snapshot is in the saved
+-- profile precisely because the toggle asks for a reload, and a reload empties this file's locals: without
+-- this, a session that had zeroed the fct CVars and was then switched off would never put them back.
 function addon.RestoreCombatTextSystem()
     CombatText.applied = false
     RestoreBlizzardFCT()
