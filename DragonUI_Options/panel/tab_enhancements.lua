@@ -712,7 +712,7 @@ local function BuildEnhancementsTab(scroll)
     })
 
     -- ====================================================================
-    -- ENHANCED TOOLTIPS
+    -- FLOATING COMBAT TEXT
     -- ====================================================================
     C:AddSpacer(scroll)
     local fctSection = C:AddSection(scroll, LO["Floating Combat Text"])
