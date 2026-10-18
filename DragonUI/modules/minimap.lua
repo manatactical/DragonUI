@@ -16,6 +16,7 @@ local MinimapModule = {
     initialized = false,
     applied = false,
     originalStates = {},
+    farmMode = { active = false, holder = nil, parents = {}, layers = {} },
     hooks = {},
     stateDrivers = {},
     frames = {},
@@ -47,6 +48,28 @@ end
 
 local function IsDragonUIMinimapControlling()
     return MinimapModule.applied or MinimapModule._initializingMinimapSystem
+end
+
+-- ============================================================================
+-- FARM MODE
+-- ============================================================================
+
+local function GetMinimapSettings()
+    return addon.db and addon.db.profile and addon.db.profile.minimap
+end
+
+-- The player's minimap scale, times the farm bonus while farm mode is on.
+local function GetEffectiveMinimapScale()
+    local settings = GetMinimapSettings()
+    local scale = tonumber(settings and settings.scale) or 1
+    if scale <= 0 then scale = 1 end
+
+    if settings and settings.farm_mode_enabled == true then
+        local bonus = tonumber(settings.farm_mode_scale) or 1
+        scale = scale * math.min(math.max(bonus, 1), 2)
+    end
+
+    return scale
 end
 
 local blipScale = 1.12
@@ -793,22 +816,54 @@ local function GetStyleOffsets()
     return 0, MAP_OFFSET_Y
 end
 
--- Live style switches only; ReplaceBlizzardFrame anchors both frames itself on every apply.
+-- Farm mode grows the map from the screen corner it sits in, so a map at an edge grows inward.
+local function GetMinimapGrowthPivot(mover)
+    local settings = GetMinimapSettings()
+    if not (mover and settings and settings.farm_mode_enabled == true) then return "CENTER" end
+    local x, y = mover:GetCenter()
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    if not (x and y and width and height and width > 0 and height > 0) then return "CENTER" end
+    -- GetCenter answers in the mover's own scaled units.
+    local ratio = mover:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    x, y = x * ratio / width, y * ratio / height
+    local pivot = ((y > 2 / 3 and "TOP") or (y < 1 / 3 and "BOTTOM") or "")
+        .. ((x > 2 / 3 and "RIGHT") or (x < 1 / 3 and "LEFT") or "")
+    return pivot ~= "" and pivot or "CENTER"
+end
+
+-- The shift SetEditorBoxScale gives the editor box for that pivot, in the cluster's own units.
+local function GetClusterGrowthShift(mover)
+    local pivot = GetMinimapGrowthPivot(mover)
+    if pivot == "CENTER" then return 0, 0 end
+    local grow = MinimapCluster:GetScale() - 1
+    local fromLeft = pivot:find("LEFT") and 0 or (pivot:find("RIGHT") and 1 or 0.5)
+    local fromTop = pivot:find("TOP") and 0 or (pivot:find("BOTTOM") and 1 or 0.5)
+    local ratio = mover:GetEffectiveScale() / MinimapCluster:GetEffectiveScale()
+    return mover:GetWidth() * grow * (0.5 - fromLeft) * ratio, mover:GetHeight() * grow * (fromTop - 0.5) * ratio
+end
+
+-- Live style switches and farm growth; ReplaceBlizzardFrame anchors both frames itself on every apply.
 local function ApplyStyleAnchors()
     local mover = MinimapModule.minimapFrame
+    if not mover then return end
     local clusterLift, mapOffsetY = GetStyleOffsets()
-    if not mover or MinimapModule.appliedMapOffsetY == mapOffsetY then return end
+    local shiftX, shiftY = GetClusterGrowthShift(mover)
+    if MinimapModule.appliedMapOffsetY == mapOffsetY and MinimapModule.appliedShiftX == shiftX
+        and MinimapModule.appliedShiftY == shiftY then
+        return
+    end
     if InCombatLockdown() then
         addon.CombatQueue:Add("minimap_style_anchors", ApplyStyleAnchors)
         return
     end
 
     MinimapCluster:ClearAllPoints()
-    MinimapCluster:SetPoint("CENTER", mover, "CENTER", 0, clusterLift)
+    MinimapCluster:SetPoint("CENTER", mover, "CENTER", shiftX, clusterLift + shiftY)
     -- Anchor offsets are read in the map's own scaled units.
     Minimap:ClearAllPoints()
     Minimap:SetPoint("CENTER", MinimapCluster, "CENTER", 0, mapOffsetY / blipScale)
     MinimapModule.appliedMapOffsetY = mapOffsetY
+    MinimapModule.appliedShiftX, MinimapModule.appliedShiftY = shiftX, shiftY
 end
 
 -- SECURE HOOKS: Add secure hooks for critical functions
@@ -987,6 +1042,7 @@ local function ReplaceBlizzardFrame(frame)
     local minimapCluster = MinimapCluster
     minimapCluster:ClearAllPoints()
     minimapCluster:SetPoint("CENTER", frame, "CENTER", 0, clusterLift)
+    MinimapModule.appliedShiftX, MinimapModule.appliedShiftY = 0, 0
 
     -- In hybrid mode with SexyMap, skip border/zone text customization
     -- SexyMap handles: borders, zone text styling, shapes
@@ -2675,6 +2731,8 @@ function MinimapModule:RestoreMinimapSystem()
 
     if addon.VisibilityFade then addon.VisibilityFade.Reset("minimap", 1) end
 
+    self:RestoreFarmMode()
+
     SetCollectorSyncEnabled(false)
 
     -- Hide DragonUI frames
@@ -3013,6 +3071,8 @@ function MinimapModule:InitializeMinimapSystem()
         self:UpdateTrackingIcon()
     end
 
+    -- A /reload with farm mode on never goes through RefreshMinimap, so park here too.
+    self:ApplyFarmMode()
 end
 
 function MinimapModule:Initialize()
@@ -3043,7 +3103,7 @@ end
 
 -- Remove functions that no longer exist and convert to DragonUI functions
 function MinimapModule:UpdateSettings()
-    local scale = addon.db.profile.minimap.scale or 1.0
+    local scale = GetEffectiveMinimapScale()
 
     if self.minimapFrame then
         local widgetConfig = addon.db.profile.widgets.minimap
@@ -3053,7 +3113,7 @@ function MinimapModule:UpdateSettings()
 
         -- Update DurabilityFrame position
         if DurabilityFrame then
-            DurabilityFrame:SetScale(scale)
+            DurabilityFrame:SetScale(addon.db.profile.minimap.scale or 1.0)
             SyncDurabilityMover()
             ApplyDurabilityPosition()
         end
@@ -3065,7 +3125,7 @@ function MinimapModule:UpdateSettings()
         --  APPLY SCALE (works perfectly now)
         if MinimapCluster then
             MinimapCluster:SetScale(scale)
-            addon.SetEditorBoxScale(self.minimapFrame, scale)
+            addon.SetEditorBoxScale(self.minimapFrame, scale, GetMinimapGrowthPivot(self.minimapFrame))
         end
 
         if self.borderFrame then
@@ -3188,6 +3248,126 @@ local function ApplyClockAndZoneLayout(showClock)
             MinimapZoneText:SetAllPoints(MinimapZoneTextButton)
         end
     end
+end
+
+-- ============================================================================
+-- FARM MODE TOGGLE
+-- ============================================================================
+
+-- Parked on a hidden holder, so they stay hidden whatever calls Show(); missing globals are skipped.
+local FARM_MODE_CHROME = {
+    "MinimapBorderTop",
+    "MinimapZoneTextButton",
+    "GameTimeFrame",
+    "TimeManagerClockButton",
+    "MiniMapTracking",
+    "MiniMapMailFrame",
+    "MiniMapInstanceDifficulty",
+    "MiniMapBattlefieldFrame",
+    "DragonUI_MinimapSettingsButton",
+    "DragonUI_MinimapIconCollector",
+}
+
+function MinimapModule:ToggleFarmMode()
+    local settings = GetMinimapSettings()
+    if not settings or not IsMinimapSystemActive() then
+        addon:Print(L["Minimap module not available."])
+        return
+    end
+
+    local active = settings.farm_mode_enabled == true
+    settings.farm_mode_enabled = not active
+
+    addon:Print(active and L["Farm mode disabled"] or L["Farm mode enabled"])
+
+    addon:RefreshMinimap()
+end
+
+local function CreateFarmModeHolder()
+    local holder = CreateFrame("Frame", nil, UIParent)
+    holder:Hide()
+    return holder
+end
+
+local function SaveFrameLayers(frame, layers)
+    if not frame.GetFrameLevel then return end
+    layers[frame] = { frame:GetFrameStrata(), frame:GetFrameLevel() }
+    local children = { frame:GetChildren() }
+    for index = 1, #children do
+        SaveFrameLayers(children[index], layers)
+    end
+end
+
+-- Top-down, since a parent's SetFrameStrata also moves its children.
+local function RestoreFrameLayers(frame, layers)
+    if not frame.GetFrameLevel then return end
+    local saved = layers[frame]
+    if saved then
+        if frame:GetFrameStrata() ~= saved[1] then frame:SetFrameStrata(saved[1]) end
+        if frame:GetFrameLevel() ~= saved[2] then frame:SetFrameLevel(saved[2]) end
+    end
+    local children = { frame:GetChildren() }
+    for index = 1, #children do
+        RestoreFrameLayers(children[index], layers)
+    end
+end
+
+-- Parents are read for everything before anything moves: a parked child would record the holder.
+local function ParkFarmModeFrames()
+    local holder = MinimapModule.farmMode.holder or CreateFarmModeHolder()
+    MinimapModule.farmMode.holder = holder
+    local parents, layers = MinimapModule.farmMode.parents, MinimapModule.farmMode.layers
+
+    local parkable = {}
+    for index = 1, #FARM_MODE_CHROME do
+        local region = _G[FARM_MODE_CHROME[index]]
+        if region and not parents[region] then
+            parents[region] = region:GetParent()
+            SaveFrameLayers(region, layers)
+            parkable[#parkable + 1] = region
+        end
+    end
+
+    for index = 1, #parkable do
+        parkable[index]:SetParent(holder)
+    end
+end
+
+-- SetParent resets strata and level (e.g. the gear sits at Minimap + 20), so both are put back.
+local function RestoreFarmModeFrames()
+    local parents, layers = MinimapModule.farmMode.parents, MinimapModule.farmMode.layers
+
+    for region, parent in pairs(parents) do
+        region:SetParent(parent)
+    end
+    for region in pairs(parents) do
+        RestoreFrameLayers(region, layers)
+    end
+    wipe(parents)
+    wipe(layers)
+end
+
+function MinimapModule:RestoreFarmMode()
+    RestoreFarmModeFrames()
+    self.farmMode.active = false
+end
+
+-- RefreshMinimap already queues this while in combat.
+function MinimapModule:ApplyFarmMode()
+    local settings = GetMinimapSettings()
+    if not settings then return end
+
+    if settings.farm_mode_enabled ~= true then
+        if self.farmMode.active then self:RestoreFarmMode() end
+        return
+    end
+
+    self.farmMode.active = true
+    -- Hybrid hands the chrome to SexyMap; the bigger map still applies there.
+    if IsHybridMinimapModeActive() then return end
+
+    -- Runs while active too: chrome created since (the gear once the collector is enabled) gets parked.
+    ParkFarmModeFrames()
 end
 
 -- Apply all minimap settings from the database
@@ -3314,6 +3494,8 @@ function addon:RefreshMinimap()
     end
 
     if MinimapModule.isEnabled then
+        -- Parks or restores the chrome first: the settings pass below re-applies visibility.
+        MinimapModule:ApplyFarmMode()
         MinimapModule:UpdateSettings()
         -- Also update tracking icon when settings change
         MinimapModule:UpdateTrackingIcon()
@@ -3335,6 +3517,9 @@ function addon:RefreshMinimap()
         if addon.MinimapDecorations and addon.MinimapDecorations.Refresh then
             addon.MinimapDecorations:Refresh()
         end
+
+        -- Parks chrome this pass just created, e.g. the gear when the collector gets enabled.
+        MinimapModule:ApplyFarmMode()
     end
 end
 

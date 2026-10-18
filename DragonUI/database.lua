@@ -232,6 +232,15 @@ local defaults = {
             class_color = false,  -- Health bar in the class colour
             bar_text = false,     -- Percentage and value on the bars
         },
+        -- Level-up banner (the enable flag is modules.levelupenhance.enabled; position in widgets.levelupenhance)
+        levelupenhance = {
+            scale = 1,            -- Banner and list scale (0.6-1.6)
+            show_unlocks = true,  -- Show what the level unlocks (abilities, features, dungeons, raids, battlegrounds)
+            auto_expand = true,   -- Open the list on its own, as retail shows the unlocks without a click
+            unlock_style = "banner", -- banner: one at a time inside the banner, as retail | list: a list under it
+            chat_unlocks = true,  -- Print the unlocks in the windows that get the level-up message
+            pet_levelup = true,   -- Banner when a hunter pet levels up
+        },
         -- Combo points (the enable flag is modules.combopoints.enabled)
         combopoints = {
             location = "auto",    -- auto | both | player | target; auto follows unitframe.frame_style
@@ -290,6 +299,11 @@ local defaults = {
             x = 0,
             y = 220,
             autoRoll = false, -- Auto greed/disenchant green BoE rolls at max level
+        },
+        -- Party Invites
+        autoaccept = {
+            friends = false, -- Accept party invites from players on the friends list
+            guild = false, -- Accept party invites from guild members
         },
         -- ACTIONBAR SETTINGS
         mainbars = {
@@ -584,6 +598,7 @@ local defaults = {
             square_top_arrow = true, -- Forever square: north pointer on the top edge
             border_alpha = 1,
             blip_skin = true, -- true = new/modern style, false = old/classic Blizzard style
+            ping_sender = true, -- Name of whoever pinged the minimap, in their class color
             tracking_icons = true,
             zoom_buttons = false,
             calendar = true,
@@ -592,6 +607,8 @@ local defaults = {
             player_arrow_size = 40,
             zonetext_font_size = 12,
             settings_button_angle = 203,
+            farm_mode_enabled = false, -- Bigger map, chrome hidden; toggled by /dui farm or the panel
+            farm_mode_scale = 1.5, -- Extra scale on top of minimap.scale (clamped to 1-2)
             collector_enabled = true,
             collector_style = "dragonui",
             animated_border_enabled = false,
@@ -1136,7 +1153,8 @@ local defaults = {
                 friendlyNameOnlyTitle = false, -- show the player's title inline via UnitPVPName (e.g. "Arthas Jenkins")
                 friendlyNameOnlyAFK = false, -- show <AFK> for away friendly players in headline mode
                 friendlyNPCNameOnly = false, -- headline mode for friendly NPCs
-                friendlyNPCNameOnlyTitle = false, -- show <Title/Occupation> subtitle for friendly NPCs (awesome_wotlk only)
+                friendlyNPCNameOnlyTitle = false, -- show <Title/Occupation> subtitle for friendly NPCs (token or unit cache)
+                unitCacheRemember = true, -- keep learned players and NPC titles between sessions (per realm / per locale)
                 headlineExcludeTarget = false, -- keep health/power/cast bars on the current target while headline mode is active
                 enemyPlayerClassColors = false, -- use class colors for enemy player nameplates (ShowClassColorInNameplate)
                 disableNonTargetFade = false, -- when true, target/non-target use the same full opacity
@@ -1185,6 +1203,8 @@ local defaults = {
                 target_of_target = true, -- Show target-of-target line
                 health_bar = true, -- Show health bar on tooltip
                 anchor_cursor = false, -- Anchor tooltip to cursor
+                anchor_cursor_x = 20, -- X offset from the cursor
+                anchor_cursor_y = 20, -- Y offset from the cursor
                 show_aura_source = true, -- Show caster name on buff/debuff tooltips
                 show_aura_spell_id = false, -- Show spell ID on buff/debuff tooltips
             },
@@ -1318,6 +1338,7 @@ local defaults = {
                 inns = true, -- Innkeeper pins on zone maps, the hearthstone's inn drawn larger
                 coordinates = true, -- Cursor and player coordinates in the canvas corner
                 zoneLevels = true, -- Recommended level ranges beside zone names and instance pins
+                groupPins = "color", -- Party/raid pins on the world and battlefield maps: "blizzard", "color" or "icon"
                 fadeWhenMoving = false, -- Dim the map while you move with the cursor off it
                 moveAlpha = 0.4, -- Alpha the map fades to while moving
             },
@@ -1345,6 +1366,12 @@ local defaults = {
             addonmanager = {
                 enabled = true, -- AddOns button in the Esc menu opening the in-game addon list
                 scale = 1, -- Addon list window scale on top of the UI scale
+            },
+            mail = {
+                enabled = true, -- Retail-style mail window with the Open All button
+            },
+            taxiframe = {
+                enabled = true, -- Retail-style flight master map window
             },
         },
 
