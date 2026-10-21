@@ -321,6 +321,11 @@ L["Fire abilities on key press instead of key release."] = true
 L["Enable Item Quality Borders"] = true
 L["Show quality-colored borders on items in bags, character panel, bank, merchant, and inspect frames."] = true
 L["Adds quality-colored glow borders to items in your bags, character panel, bank, merchant, and inspect frames: green = uncommon, blue = rare, purple = epic, orange = legendary."] = true
+L["Character Item Counts"] = true
+L["Show Character Item Counts"] = true
+L["Automatic Equipment Comparison"] = true
+L["Compare equippable items with your equipped gear without holding Shift, including item links opened from chat. Hold Ctrl to suppress it."] = true
+L["Shows how many of the hovered item each of your characters on this realm holds, split into bags, bank and equipped."] = true
 L["Minimum Quality"] = true
 L["Poor"] = true
 L["Common"] = true
@@ -332,6 +337,8 @@ L["Legendary"] = true
 -- Loot Window
 L["Loot Window"] = true
 L["Configure the DragonUI loot window."] = true
+L["Auto-Hide Empty Loot"] = true
+L["Close the loot window when there is nothing left to loot."] = true
 L["Enable Loot Window"] = true
 L["Apply the DragonUI skin to the Blizzard loot window."] = true
 L["Open at Cursor"] = true
@@ -356,6 +363,8 @@ L["Vertical position of the item level number on the icon."] = true
 L["Average Item Level"] = true
 L["Show the average item level of equipped gear on the character and inspect panels."] = true
 L["Durability on Character Slots"] = true
+L["Show Repair Cost"] = true
+L["Show the total repair cost of your equipped items in the character window."] = true
 L["Show each equipped item's durability percentage on its character panel slot, opposite the item level."] = true
 L["Show in Tooltip"] = true
 L["Also enable Blizzard's own item level line in item tooltips."] = true
@@ -399,8 +408,8 @@ L["Vertical offset from the cursor."] = true
 L["Show Aura Source"] = true
 L["Show the caster's name (class-colored) on buff and debuff tooltips."] = true
 L["Aura Tooltips"] = true
-L["Show Aura Spell ID"] = true
-L["Show the spell ID on buff and debuff tooltips. Requires the Tooltip module."] = true
+L["Show Spell IDs"] = true
+L["Show spell IDs on aura, spell and chat-link tooltips. Requires the Tooltip module."] = true
 
 -- Chat Mods
 L["Enable Chat Mods"] = true
@@ -530,6 +539,20 @@ L["Item Count in Tooltip"] = true
 L["Show how many of the hovered item you own in total, across your bags and bank."] = true
 L["Quality Filter Row"] = true
 L["Show the rarity filter dots at the bottom of the bag frame."] = true
+L["New Items"] = true
+L["Highlight New Items"] = true
+L["Make items you just looted, bought, crafted or received glow in the inventory until you hover them."] = true
+L["Glow Style"] = true
+L["Border"] = true
+L["Starburst"] = true
+L["Glow Color"] = true
+L["Item Quality"] = true
+L["Custom"] = true
+L["Custom Glow Color"] = true
+L["Clear When Bags Close"] = true
+L["Closing a bag removes its new-item glows. When off, a glow only goes away when you hover the item."] = true
+L["Ignore Poor Quality Items"] = true
+L["Never mark gray (poor quality) items as new."] = true
 
 -- Advanced modules - Fallback display names
 L["Main Bars"] = true
@@ -793,6 +816,28 @@ L["Show a safe-zone overlay based on real cast latency."] = true
 L["Latency Color"] = true
 L["Latency Alpha"] = true
 L["Opacity of the latency indicator."] = true
+
+-- Global cooldown indicator (player only)
+L["Global Cooldown"] = true
+L["Enable GCD Indicator"] = true
+L["Show a global cooldown readout above the player cast bar."] = true
+L["GCD Height"] = true
+L["Thickness of the GCD bar in pixels."] = true
+L["GCD Width"] = true
+L["Width of the GCD bar as a percentage of the cast bar."] = true
+L["GCD Color"] = true
+L["Always Show GCD Track"] = true
+L["Keep the empty GCD bar visible while no global cooldown is running."] = true
+L["Reset GCD Position"] = true
+L["GCD indicator reset to the cast bar."] = true
+L["GCD Style"] = true
+L["Fill texture of the GCD bar."] = true
+L["GCD Background"] = true
+L["What is drawn behind the GCD bar."] = true
+L["Show GCD Spark"] = true
+L["Show a spark on the moving edge of the GCD bar."] = true
+L["Flat"] = true
+L["Framed"] = true
 
 -- ============================================================================
 -- ENHANCEMENTS TAB
@@ -1278,7 +1323,7 @@ L["Class Colors on Enemy Names"] = true
 L["Show Target Highlight"] = true
 L["Show Target Arrows"] = true
 L["Only Show Target Nameplate"] = true
-L["Show only your target's hostile nameplate. In combat, also show hostile NPCs attacking you, all of them fully opaque. Friendly plates are never hidden by this."] = true
+L["Show only your target's hostile nameplate. In combat, also show hostile NPCs attacking you. Friendly plates are never hidden by this."] = true
 L["Left/right arrows on the targeted nameplate."] = true
 L["Opacity"] = true
 L["Disable Non-Target Fade"] = true

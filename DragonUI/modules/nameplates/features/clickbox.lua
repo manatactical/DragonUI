@@ -390,6 +390,7 @@ function NP.clickbox.RestorePlate(plateData)
     if not plate or InCombatLockdown() then
         return false
     end
+    plate._duiOnlyTargetShrunk = nil
     local width = NP.module._clickboxNativeW or plate._dragonUIClickboxNativeW or plateData._clickboxBaseW
     local height = NP.module._clickboxNativeH or plate._dragonUIClickboxNativeH or plateData._clickboxBaseH
     if width and height and plate.SetSize and not plateData._gatedSizeApplied then
