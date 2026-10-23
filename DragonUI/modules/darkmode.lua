@@ -168,6 +168,17 @@ end
 -- Each function targets ONLY the border/chrome textures of a specific UI area.
 -- ============================================================================
 
+-- Masque swaps in its own frame art; dark mode writes on the stock one make it reappear on click.
+local function DarkenButtonFrame(button, normal, tint)
+    if not (normal and normal.GetObjectType and normal:GetObjectType() == "Texture") then return end
+    if button.__MSQ_Enabled then
+        DarkModeModule.darkenedTextures[normal] = nil
+        normal.__DragonUI_OrigColor = nil
+        return
+    end
+    DarkenTexture(normal, tint)
+end
+
 -- -----------------------------------------------------------------------
 -- ACTION BAR BUTTONS: darken NormalTexture (border frame) and background,
 -- but NEVER the Icon (ability texture)
@@ -201,9 +212,7 @@ local function DarkenActionButtonBorders(tint)
         if button then
             -- Darken NormalTexture (the border frame around the icon)
             local normal = _G[ACTION_BUTTON_NAMES[n + 1]] or (button.GetNormalTexture and button:GetNormalTexture())
-            if normal and normal.GetObjectType and normal:GetObjectType() == "Texture" then
-                DarkenTexture(normal, frameTint)
-            end
+            DarkenButtonFrame(button, normal, frameTint)
             -- Darken background slot texture (created by DragonUI buttons module)
             if button.background and button.background.GetObjectType and button.background:GetObjectType() == "Texture" then
                 DarkenTexture(button.background, tint)
@@ -223,9 +232,7 @@ local function DarkenStanceButtonBorders(tint)
         local button = _G["ShapeshiftButton" .. i]
         if button then
             local normal = _G["ShapeshiftButton" .. i .. "NormalTexture"] or (button.GetNormalTexture and button:GetNormalTexture())
-            if normal and normal.GetObjectType and normal:GetObjectType() == "Texture" then
-                DarkenTexture(normal, frameTint)
-            end
+            DarkenButtonFrame(button, normal, frameTint)
             if button.background and button.background:GetObjectType() == "Texture" then
                 DarkenTexture(button.background, tint)
             end
@@ -243,9 +250,7 @@ local function DarkenPetButtonBorders(tint)
         if button then
             local normal = _G["PetActionButton" .. i .. "NormalTexture2"] or _G["PetActionButton" .. i .. "NormalTexture"]
                            or (button.GetNormalTexture and button:GetNormalTexture())
-            if normal and normal.GetObjectType and normal:GetObjectType() == "Texture" then
-                DarkenTexture(normal, frameTint)
-            end
+            DarkenButtonFrame(button, normal, frameTint)
             if button.background and button.background:GetObjectType() == "Texture" then
                 DarkenTexture(button.background, tint)
             end
@@ -471,6 +476,10 @@ local function DarkenUnitFrameBorders(tint)
         if dragonFrame.PlayerDragonDecoration then
             DarkenTexture(dragonFrame.PlayerDragonDecoration, tint)
         end
+        local playerDragonPaw = _G["DragonUI_PlayerDragonPaw"]
+        if playerDragonPaw then
+            DarkenTexture(playerDragonPaw, tint)
+        end
         -- Fat bar + decoration border overlay
         if dragonFrame.BorderOverlayTexture then
             DarkenTexture(dragonFrame.BorderOverlayTexture, tint)
@@ -498,6 +507,8 @@ local function DarkenUnitFrameBorders(tint)
     if dragonTargetBG then DarkenTexture(dragonTargetBG, tint) end
     local dragonTargetElite = _G["DragonUI_TargetElite"]
     if dragonTargetElite then DarkenTexture(dragonTargetElite, tint) end
+    local dragonTargetElitePaw = _G["DragonUI_TargetElitePaw"]
+    if dragonTargetElitePaw then DarkenTexture(dragonTargetElitePaw, tint) end
     local targetLevelCircle = _G["DragonUI_TargetLevelCircle"]
     if targetLevelCircle then DarkenTexture(targetLevelCircle, tint) end
     local targetPvPCircle = _G["DragonUI_TargetPvPCircle"]
@@ -522,6 +533,8 @@ local function DarkenUnitFrameBorders(tint)
     if dragonFocusBG then DarkenTexture(dragonFocusBG, tint) end
     local dragonFocusElite = _G["DragonUI_FocusElite"]
     if dragonFocusElite then DarkenTexture(dragonFocusElite, tint) end
+    local dragonFocusElitePaw = _G["DragonUI_FocusElitePaw"]
+    if dragonFocusElitePaw then DarkenTexture(dragonFocusElitePaw, tint) end
     local focusLevelCircle = _G["DragonUI_FocusLevelCircle"]
     if focusLevelCircle then DarkenTexture(focusLevelCircle, tint) end
     local focusPvPCircle = _G["DragonUI_FocusPvPCircle"]
@@ -878,6 +891,8 @@ end
 local function GuardSetVertexColor(self)
     if not DarkModeModule.applied then return end
     if self.__DragonUI_SettingDark then return end
+    local owner = self:GetParent()
+    if owner and owner.__MSQ_Enabled then return end
     self.__DragonUI_SettingDark = true
     local tint = GetFrameTintValues()
     self:SetVertexColor(tint[1], tint[2], tint[3], tint[4] or 1)
@@ -895,7 +910,7 @@ local function ReDarkenButton(button)
     local normal = _G[name .. "NormalTexture2"] or _G[name .. "NormalTexture"]
                    or (button.GetNormalTexture and button:GetNormalTexture())
     if normal and normal.GetObjectType and normal:GetObjectType() == "Texture" then
-        DarkenTexture(normal, GetFrameTintValues())
+        DarkenButtonFrame(button, normal, GetFrameTintValues())
         -- Re-install vertex color guard if texture was replaced (e.g. SetNormalTexture call)
         if not normal.__DragonUI_VCGuard then
             local ok = pcall(hooksecurefunc, normal, "SetVertexColor", GuardSetVertexColor)

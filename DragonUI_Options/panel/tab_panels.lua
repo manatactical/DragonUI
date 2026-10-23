@@ -77,20 +77,28 @@ local function BuildCharacterSubTab(scroll)
         requiresReload = true,
     })
 
-    C:AddToggle(cpSection, {
-        label = LO["Class Portrait"],
-        desc = LO["Show your class icon in the portrait instead of your character's face."],
+    -- Keys sort in display order: the embedded dropdown lists them alphabetically.
+    C:AddDropdown(cpSection, {
+        label = LO["Portrait"],
+        values = {
+            character = LO["Character"],
+            class = LO["Class Icon"],
+            spec = LO["Specialization Icon"],
+        },
+        width = 200,
         getFunc = function()
-            return GetModuleField("characterpanel", "class_portrait") ~= false
+            local CP = addon.CharacterPanel
+            return CP and CP.PortraitStyle and CP.PortraitStyle() or "spec"
         end,
         setFunc = function(val)
-            EnsureModuleTable("characterpanel").class_portrait = val
+            local cfg = EnsureModuleTable("characterpanel")
+            cfg.portrait_style = val
+            cfg.class_portrait = nil
             if addon.CharacterPanel and addon.CharacterPanel.UpdatePortrait then
                 addon.CharacterPanel.UpdatePortrait()
             end
         end,
         disabled = function() return not IsEnabled("characterpanel") end,
-        requiresReload = false,
     })
 
     C:AddToggle(cpSection, {
@@ -444,6 +452,24 @@ local function BuildWorldMapSubTab(scroll)
         requiresReload = false,
     })
 
+    -- Keys sort in display order: the embedded dropdown lists them alphabetically.
+    C:AddDropdown(mapSection, {
+        label = LO["Group Member Pins"],
+        desc = LO["How party and raid members show on the world map and the battlefield map. Class colors and class icons also color their names in the tooltip and add their health."],
+        values = {
+            blizzard = LO["Default (Blizzard)"],
+            color = LO["Class Colors"],
+            icon = LO["Class Icons"],
+        },
+        width = 200,
+        getFunc = function() return GetModuleField("worldmap", "groupPins") or "color" end,
+        setFunc = function(val)
+            EnsureModuleTable("worldmap").groupPins = val
+            if addon.RefreshWorldMapSystem then addon.RefreshWorldMapSystem() end
+        end,
+        disabled = function() return not IsEnabled("worldmap") end,
+    })
+
     C:AddToggle(mapSection, {
         label = LO["Fade Map While Moving"],
         desc = LO["Dim the map while you move, unless the cursor is over it."],
@@ -517,6 +543,19 @@ local function BuildLootSubTab(scroll)
         setFunc = function(val)
             EnsureModuleTable("loot_skin").animated_reflow = val
             if addon.LootSkinModule then addon.LootSkinModule:RefreshSettings() end
+        end,
+        disabled = function() return not IsEnabled("loot_skin") end,
+        requiresReload = false,
+    })
+
+    C:AddToggle(lootSection, {
+        label = LO["Auto-Hide Empty Loot"],
+        desc = LO["Close the loot window when there is nothing left to loot."],
+        getFunc = function()
+            return GetModuleField("loot_skin", "auto_hide_empty") == true
+        end,
+        setFunc = function(val)
+            EnsureModuleTable("loot_skin").auto_hide_empty = val
         end,
         disabled = function() return not IsEnabled("loot_skin") end,
         requiresReload = false,

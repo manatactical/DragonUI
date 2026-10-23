@@ -388,6 +388,9 @@ end
 R.comboPoints = function()
     if addon.RefreshComboPointsSystem then addon.RefreshComboPointsSystem() end
 end
+R.levelUp = function()
+    if addon.RefreshLevelUpEnhance then addon.RefreshLevelUpEnhance() end
+end
 
 E.refresh = R
 
@@ -1193,6 +1196,69 @@ E.Register("TargetCastbar", CastbarSettings("castbar.target", R.castbarTarget, 5
 E.Register("FocusCastbar", CastbarSettings("castbar.focus", R.castbarFocus, 50, 400, 5, 50))
 
 -- ============================================================================
+-- DEFINITIONS: GLOBAL COOLDOWN INDICATOR
+-- ============================================================================
+
+R.gcd = function()
+    if addon.RefreshGCD then addon.RefreshGCD() end
+    RefreshCastbarPreview("GCDIndicator")
+end
+
+local GCD_STYLE_ITEMS = {
+    { "castbar", T("Cast Bar") },
+    { "smooth", T("Smooth") },
+    { "classic", T("Classic") },
+    { "flat", T("Flat") },
+}
+
+local GCD_BACKGROUND_ITEMS = {
+    { "castbar", T("Cast Bar") },
+    { "dark", T("Dark") },
+    { "framed", T("Framed") },
+    { "none", T("None") },
+}
+
+local function GCDSettings()
+    local refresh = R.gcd
+    local function GCDOff() return not GetDB("castbar.gcd.enabled") end
+
+    return { settings = Join({
+        Section(T("Global Cooldown"), false),
+        Check(T("Enable GCD Indicator"), "castbar.gcd.enabled", refresh, {
+            after = function() E.SyncFrames(); E.Rebuild() end }),
+        Slider(T("GCD Height"), "castbar.gcd.height", 1, 12, 1, refresh, {
+            resize = true, disabled = GCDOff }),
+        -- The width is stored as a fraction of the cast bar, the slider works in percent.
+        Slider(T("GCD Width"), "castbar.gcd.width", 10, 100, 5, refresh, {
+            resize = true, disabled = GCDOff, format = "%.0f%%",
+            get = function() return (GetNumber("castbar.gcd.width", 1) or 1) * 100 end,
+            set = function(value)
+                SetDB("castbar.gcd.width", value / 100)
+                Deferred(refresh)
+            end,
+        }),
+        ColorRow(T("GCD Color"), {
+            disabled = GCDOff,
+            get = function()
+                local color = GetDB("castbar.gcd.color")
+                if type(color) ~= "table" then return { 1, 0.7, 0, 1 } end
+                return { color.r or 1, color.g or 0.7, color.b or 0, color.a or 1 }
+            end,
+            set = function(r, g, b, a)
+                SetDB("castbar.gcd.color", { r = r, g = g, b = b, a = a or 1 })
+                Deferred(refresh)
+            end,
+        }),
+        Check(T("Always Show GCD Track"), "castbar.gcd.alwaysShow", refresh, { disabled = GCDOff }),
+        Drop(T("GCD Style"), "castbar.gcd.style", GCD_STYLE_ITEMS, refresh, { disabled = GCDOff }),
+        Drop(T("GCD Background"), "castbar.gcd.background", GCD_BACKGROUND_ITEMS, refresh, { disabled = GCDOff }),
+        Check(T("Show GCD Spark"), "castbar.gcd.spark", refresh, { disabled = GCDOff }),
+    }) }
+end
+
+E.Register("GCDIndicator", GCDSettings())
+
+-- ============================================================================
 -- DEFINITIONS: ACTION BARS, XP/REP, MICRO MENU, BAGS
 -- ============================================================================
 
@@ -1613,7 +1679,7 @@ local function TooltipOff()
 end
 
 local function SpellIdRow()
-    return Check(T("Show Aura Spell ID"), "modules.tooltip.show_aura_spell_id", nil, {
+    return Check(T("Show Spell IDs"), "modules.tooltip.show_aura_spell_id", nil, {
         get = function() return GetDB("modules.tooltip.show_aura_spell_id") == true end,
         disabled = TooltipOff })
 end
@@ -1685,6 +1751,12 @@ E.Register("tooltip", { settings = {
             E.Rebuild()
         end,
         disabled = TooltipOff }),
+    Slider(T("Cursor Anchor Offset X"), "modules.tooltip.anchor_cursor_x", -128, 128, 1, nil, {
+        hidden = function() return GetDB("modules.tooltip.anchor_cursor") ~= true end,
+        disabled = function() return TooltipOff() or GetDB("modules.tooltip.anchor_cursor") ~= true end }),
+    Slider(T("Cursor Anchor Offset Y"), "modules.tooltip.anchor_cursor_y", -128, 128, 1, nil, {
+        hidden = function() return GetDB("modules.tooltip.anchor_cursor") ~= true end,
+        disabled = function() return TooltipOff() or GetDB("modules.tooltip.anchor_cursor") ~= true end }),
     Section(T("Tooltip"), true),
     TooltipSwitch(T("Class-Colored Border"), "class_colored_border"),
     TooltipSwitch(T("Class-Colored Name"), "class_colored_name"),
@@ -1750,11 +1822,29 @@ E.Register("personalresource", { settings = {
     Check(T("Show Bar Text"), "personalresource.bar_text", R.personalResource),
 } })
 
--- The player's combo point orbs; their location and the target gems stay in Options > Unit Frames.
+E.Register("levelupenhance", { settings = {
+    Slider(T("Scale"), "levelupenhance.scale", 0.6, 1.6, 0.05, R.levelUp, { resize = true }),
+    Check(T("Show Unlocks"), "levelupenhance.show_unlocks", R.levelUp, { after = function() E.Rebuild() end }),
+    Drop(T("Unlock Style"), "levelupenhance.unlock_style", {
+        { "banner", T("One at a Time") },
+        { "list", T("List") },
+    }, R.levelUp, {
+        disabled = function() return not GetDB("levelupenhance.show_unlocks") end,
+        after = function() E.Rebuild() end }),
+    Check(T("Open the List Automatically"), "levelupenhance.auto_expand", R.levelUp, {
+        disabled = function()
+            return not GetDB("levelupenhance.show_unlocks") or GetDB("levelupenhance.unlock_style") ~= "list"
+        end }),
+    Check(T("Unlocks in Chat"), "levelupenhance.chat_unlocks", nil, {
+        disabled = function() return not GetDB("levelupenhance.show_unlocks") end }),
+    Check(T("Pet Level-Up Banner"), "levelupenhance.pet_levelup"),
+} })
+
+-- The player's combo point orbs; their location and the target's orbs stay in Options > Unit Frames.
 E.Register("combopoints", { settings = {
     Drop(T("Orb Style"), "combopoints.style", STYLE_ITEMS, R.comboPoints),
     Check(T("Hide When Empty"), "combopoints.hide_empty", R.comboPoints, {
-        tooltip = T("Hide the orbs and the gems at 0 points instead of showing them empty.") }),
+        tooltip = T("Hide the orbs at 0 points instead of showing them empty.") }),
 } })
 
 -- Position only: the dialog keeps its coordinate rows and the reset that re-attaches them to the player frame.
@@ -1905,6 +1995,9 @@ E.Register("__manager", { settings = {
         after = function() E.SyncFrames(); E.Rebuild() end }),
     Check(T("Swing Timer"), "modules.swingtimer.enabled", R.swingTimerToggle, {
         tooltip = T("Show a bar with the time left until each weapon's next swing."),
+        after = function() E.SyncFrames(); E.Rebuild() end }),
+    Check(T("GCDAnchor"), "castbar.gcd.enabled", R.gcd, {
+        tooltip = T("Show a bar above the player cast bar that fills while the global cooldown runs."),
         after = function() E.SyncFrames(); E.Rebuild() end }),
 
     Section(T("Action Bars"), true),

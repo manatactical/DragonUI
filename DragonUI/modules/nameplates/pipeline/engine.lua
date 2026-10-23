@@ -257,17 +257,16 @@ function E.SyncEnemyClassColorCVar()
     end
 end
 
--- Force off native plate-stacking while DragonUI clamps/stacks; gated-out plates must not reserve space.
+-- Force off a native plate-stacking engine (some servers have one) while DragonUI clamps/stacks itself; no-op on stock 3.3.5a.
 function E.SyncRetailStackingCVars()
     local cfg = NP.config.GetCfg()
     if not GetCVar or not SetCVar then return end
-    local onlyTarget = NP.module._onlyTargetPlates == true
 
     -- Only SetCVar if the name already resolves (unrecognized names error unlike GetCVar).
     local currentSmoothStacking = GetCVar("nameplateSmoothStacking")
     if currentSmoothStacking ~= nil then
         local wantExclusive = NP.module._clampTargetEnabled or NP.module._clampBossEnabled
-            or NP.layout.ShouldRunRetailStacking() or onlyTarget
+            or NP.layout.ShouldRunRetailStacking()
         if wantExclusive then
             if NP.module.savedNameplateSmoothStacking == nil then
                 NP.module.savedNameplateSmoothStacking = currentSmoothStacking
@@ -326,7 +325,6 @@ end
 -- skipStackingCVar: true from the periodic scan tick, since only config-apply and zone-load need to re-run it.
 function E.SyncConfigSnapshot(skipStackingCVar)
     local cfg = NP.config.GetCfg()
-    local prevOnlyTargetPlates = NP.module._onlyTargetPlates
     NP.castbar.SyncOffTargetMonitorFromConfig(cfg)
     -- Snapshot CLEU flags; avoid per-event cfg resolution.
     NP.module._cleuCastbarEnabled = (cfg.showCastBar ~= false)
@@ -336,11 +334,7 @@ function E.SyncConfigSnapshot(skipStackingCVar)
     NP.module._opacityValue = cfg.opacityNonTarget or 0.5
     NP.module._opacityFullNoTarget = (cfg.opacityFullNoTarget ~= false)
     NP.module._opacityFullParty = (cfg.opacityFullParty == true)
-    NP.module._onlyTargetPlates = cfg.onlyTargetPlates == true
-    -- The CVar pair is snapshot-skipped sometimes; flipping the option must still reach the client.
-    if skipStackingCVar and NP.module._onlyTargetPlates ~= prevOnlyTargetPlates then
-        skipStackingCVar = false
-    end
+    NP.module._onlyTargetPlates = (cfg.onlyTargetPlates == true)
     NP.module._retailBehavior = NP.config.IsRetailBehavior()
     NP.module._healthTextFormat = NP.config.GetHealthTextFormat()
     NP.module._healthTextPlacement = NP.config.GetHealthTextPlacement()
@@ -349,6 +343,7 @@ function E.SyncConfigSnapshot(skipStackingCVar)
     NP.module._clampTargetEnabled = cfg.clampTarget == true
     NP.module._clampBossEnabled = cfg.clampBoss == true
     NP.module._clampTopInset = cfg.clampTopInset or 0
+    NP.unitcache.SyncConfig(cfg)
 
     -- Re-verify WorldFrame height each sync; external resets can invalidate the cached flag.
     local wantExtended = (NP.module._clampTargetEnabled or NP.module._clampBossEnabled) and true or false
@@ -433,6 +428,7 @@ local function EngineOnUpdate(_, elapsed)
     end
 
     -- 2. Deferred queues. Roster map first: it queues plates, so it cannot run inside a drain.
+    NP.unitcache.Flush()
     NP.identity.TickGroupTargetMatches()
     E.ProcessQueues()
 
@@ -505,32 +501,27 @@ local function EngineOnUpdate(_, elapsed)
 
     -- 7. Visual alpha on shown plates only; hidden re-apply on first tick after show.
     local onlyTarget = NP.module._onlyTargetPlates
+    local canResize = not InCombatLockdown()
     if NP.module._opacityEnabled or onlyTarget then
+        local opacityEnabled = NP.module._opacityEnabled
         local fullParty = NP.module._opacityFullParty
-        local baseAlpha = NP.module._opacityEnabled and NP.module._opacityValue or 1.0
         for _, pd in pairs(NP.module.plates) do
             local pl = pd.plate
             if pl and pl.IsShown and pl:IsShown() then
                 local isTarget = NP.identity.IsTargetPlateVisual(pd, hasTarget)
                 SyncTargetVisual(pd, isTarget)
-                local visualAlpha = baseAlpha
-                if onlyTarget then
-                    -- Overrides the opacity options: a plate that passes the gate is drawn fully.
-                    local allowed = NP.gather.IsOnlyTargetPlateAllowed(pd)
-                    visualAlpha = allowed and 1.0 or 0.0
-                    -- Size and hit rect cannot change in combat; gate alpha only there.
-                    if not InCombatLockdown() then
-                        NP.layout.SetPlateClickable(pd, allowed)
-                    end
-                else
-                    if (not InCombatLockdown()) and pd._hitRectInset then
-                        NP.layout.SetPlateClickable(pd, true)
-                    end
-                    if isTarget
-                        or ((not hasTarget) and NP.module._opacityFullNoTarget)
-                        or (fullParty and NP.gather.IsGroupMemberPlate(pd)) then
-                        visualAlpha = 1.0
-                    end
+                local hidden = onlyTarget and not NP.gather.IsOnlyTargetPlateAllowed(pd, isTarget) or false
+                pd._onlyTargetHidden = hidden or nil
+                if canResize then
+                    NP.layout.SetPlateShrunk(pd, hidden)
+                end
+                local visualAlpha = 1.0
+                if hidden then
+                    visualAlpha = 0
+                elseif opacityEnabled and not (isTarget
+                    or ((not hasTarget) and NP.module._opacityFullNoTarget)
+                    or (fullParty and NP.gather.IsGroupMemberPlate(pd))) then
+                    visualAlpha = NP.module._opacityValue
                 end
                 NP.layout.SetPlateVisualAlpha(pd, visualAlpha)
             end
@@ -541,8 +532,9 @@ local function EngineOnUpdate(_, elapsed)
             if pl and pl.IsShown and pl:IsShown() then
                 SyncTargetVisual(pd, NP.identity.IsTargetPlateVisual(pd, hasTarget))
                 NP.layout.SetPlateVisualAlpha(pd, 1.0)
-                if (not InCombatLockdown()) and pd._hitRectInset then
-                    NP.layout.SetPlateClickable(pd, true)
+                pd._onlyTargetHidden = nil
+                if canResize and pl._duiOnlyTargetShrunk then
+                    NP.layout.SetPlateShrunk(pd, false)
                 end
             end
         end
@@ -588,11 +580,13 @@ local function EngineOnEvent(_, event, unit, ...)
         -- Target alpha stale at event time; resolved on next engine tick.
         NP.module.targetGUID = UnitGUID("target")
         NP.module._deferredTargetResolveFrames = 1
+        NP.unitcache.LearnUnit("target")
         return
     end
     if event == "PLAYER_FOCUS_CHANGED" then
         NP.module.focusGUID = UnitGUID("focus")
         E.QueueMass(CB.OnUpdateCastbar)
+        NP.unitcache.LearnUnit("focus")
         return
     end
     if event == "UPDATE_MOUSEOVER_UNIT" then
@@ -600,6 +594,7 @@ local function EngineOnEvent(_, event, unit, ...)
         if NP.quest and NP.quest.OnMouseover then
             NP.quest.OnMouseover()
         end
+        NP.unitcache.LearnUnit("mouseover")
         return
     end
     if event == "UNIT_TARGET" and unit then
@@ -658,12 +653,14 @@ local function EngineOnEvent(_, event, unit, ...)
         if NP.quest_coexist and NP.quest_coexist.Check then
             NP.quest_coexist.Check()
         end
+        NP.unitcache.MarkGroupDirty()
         return
     end
     if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
         E.UpdatePartyArenaTokenMaps()
         NP.identity.RefreshGroupTargetMatches()
         E.QueueMass(CB.OnUpdateCastbar)
+        NP.unitcache.MarkGroupDirty()
         return
     end
     if event == "ARENA_OPPONENT_UPDATE" then
@@ -730,10 +727,10 @@ local function EngineOnEvent(_, event, unit, ...)
     end
     if event == "PLAYER_REGEN_DISABLED" then
         NP.module.playerInCombat = true
-        -- Restore plate sizes before the lockdown so gated ones stay clickable.
+        -- Last moment before the lockdown: shrunk plates need their size back to be clickable in combat.
         for _, pd in pairs(NP.module.plates) do
-            if pd and pd.plate then
-                NP.layout.SetPlateClickable(pd, true)
+            if pd.plate and pd.plate._duiOnlyTargetShrunk then
+                NP.layout.SetPlateShrunk(pd, false)
             end
         end
         if NP.clickbox and NP.clickbox.OnCombatStart then
@@ -751,14 +748,6 @@ local function EngineOnEvent(_, event, unit, ...)
         NP.auras.PruneCaches()
         if NP.tap then
             NP.tap.PruneCache()
-        end
-        if NP.module._onlyTargetPlates then
-            for _, pd in pairs(NP.module.plates) do
-                if pd and pd.plate and pd.plate.IsShown and pd.plate:IsShown() then
-                    local allowed = NP.gather.IsOnlyTargetPlateAllowed(pd)
-                    NP.layout.SetPlateClickable(pd, allowed)
-                end
-            end
         end
         NP.layout.FlushPendingPlateLayout()
         if NP.config.IsOffTargetCastMonitorActive(NP.config.GetCfg())
@@ -779,6 +768,10 @@ local function EngineOnEvent(_, event, unit, ...)
         -- Gate CLEU once via exported event sets and config snapshot.
         local timestamp = unit
         local subevent = ...
+        if NP.module._unitCacheCLEU then
+            local _, srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags = ...
+            NP.unitcache.OnCombatLog(srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags)
+        end
         if NP.auras.AURA_COMBATLOG_EVENTS[subevent] then
             NP.auras.HandleCombatLog(timestamp, ...)
         end
@@ -1069,15 +1062,13 @@ local function RunNameplatesRestore()
     for icon in pairs(NP.state.AuraGUIDByRaidIcon) do
         NP.state.AuraGUIDByRaidIcon[icon] = nil
     end
+    NP.unitcache.Stop()
 
     for _, plateData in pairs(NP.module.plates) do
         -- Hide module visuals and restore native chrome.
         NP.lifecycle.InvalidatePlateVisuals(plateData, true)
         NP.layout.HideMinaStack(plateData)
         NP.layout.SetPlateVisualAlpha(plateData, 1.0)
-        if plateData._hitRectInset then
-            NP.layout.SetPlateClickable(plateData, true)
-        end
         NP.discovery.RestoreNativeChrome(plateData)
 
         local plate = plateData.plate

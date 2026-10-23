@@ -329,15 +329,21 @@ addon.ShowNineslice = ShowNineslice
 addon.HideNineslice = HideNineslice
 
 -- Grows the editor box (outline + click area) about the point the real frame hangs from; the widget itself stays put.
+-- frame.DragonUI_BoxInsets { left, right, top, bottom } first fits the outline to a smaller (or larger) widget.
 function addon.SetEditorBoxScale(frame, scale, pivot)
     local slice = frame and frame.NineSlice
     if not slice or (InCombatLockdown() and frame:IsProtected()) then return end
     scale, pivot = scale or 1, pivot or "CENTER"
-    local growW, growH = frame:GetWidth() * (scale - 1), frame:GetHeight() * (scale - 1)
+    local w, h = frame:GetWidth(), frame:GetHeight()
     local fromLeft = pivot:find("LEFT") and 0 or (pivot:find("RIGHT") and 1 or 0.5)
     local fromTop = pivot:find("TOP") and 0 or (pivot:find("BOTTOM") and 1 or 0.5)
-    local left, right = growW * fromLeft, growW * (1 - fromLeft)
-    local top, bottom = growH * fromTop, growH * (1 - fromTop)
+    local insets = frame.DragonUI_BoxInsets or { 0, 0, 0, 0 }
+    local px, py = w * fromLeft, h * fromTop
+    -- How far each outline edge reaches past the box: the inset rect scaled about the pivot.
+    local left = -(px + (insets[1] - px) * scale)
+    local right = px + (w - insets[2] - px) * scale - w
+    local top = -(py + (insets[3] - py) * scale)
+    local bottom = py + (h - insets[4] - py) * scale - h
     local shift = (frame.DragonUI_BoxShiftY or 0) * scale
     slice.TopLeftCorner:SetPoint("TOPLEFT", -8 - left, 8 + top + shift)
     slice.TopRightCorner:SetPoint("TOPRIGHT", 8 + right, 8 + top + shift)
@@ -1369,6 +1375,64 @@ function addon:After(delay, callback)
 end
 
 -- ============================================================================
+-- TEXTURE WARMUP
+-- ============================================================================
+
+-- The client loads a texture on the first frame that draws it; a 1024x1024 TGA stalls that frame ~75 ms.
+local warmupProviders = {}
+
+-- provider() returns a texture path, a list of paths or nil; it runs once, at the first PLAYER_ENTERING_WORLD.
+function addon:RegisterTextureWarmup(provider)
+    if type(provider) == "function" then
+        warmupProviders[#warmupProviders + 1] = provider
+    end
+end
+
+local function RunTextureWarmup()
+    local holder, seen = nil, {}
+    for _, provider in ipairs(warmupProviders) do
+        local ok, files = pcall(provider)
+        if not ok then
+            addon:Debug("texture warmup:", files)
+        else
+            if type(files) == "string" then files = { files } end
+            if type(files) == "table" then
+                for _, file in ipairs(files) do
+                    if type(file) == "string" and not seen[file] then
+                        seen[file] = true
+                        holder = holder or CreateFrame("Frame", nil, UIParent)
+                        local texture = holder:CreateTexture(nil, "ARTWORK")
+                        texture:SetAllPoints()
+                        texture:SetAlpha(0)
+                        texture:SetTexture(file)
+                    end
+                end
+            end
+        end
+    end
+    if not holder then return end
+    holder:SetFrameStrata("BACKGROUND")
+    holder:SetSize(64, 64)
+    holder:SetPoint("CENTER")
+    -- The first frame after PLAYER_ENTERING_WORLD renders before the world shows; hidden regions keep their textures.
+    local frames = 0
+    holder:SetScript("OnUpdate", function(self)
+        frames = frames + 1
+        if frames >= 2 then
+            self:SetScript("OnUpdate", nil)
+            self:Hide()
+        end
+    end)
+end
+
+local warmupEvents = CreateFrame("Frame")
+warmupEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+warmupEvents:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    RunTextureWarmup()
+end)
+
+-- ============================================================================
 -- INSPECT REPLY TRACKING
 -- ============================================================================
 
@@ -1532,6 +1596,15 @@ function addon:ApplyDatabaseMigrations()
     local extrabar1 = additional and rawget(additional, "extrabar1")
     if extrabar1 then
         extrabar1.slots = nil
+    end
+
+    -- Auto-accept: the one friends-and-guild toggle became one toggle each.
+    local autoaccept = rawget(profile, "autoaccept")
+    if autoaccept and rawget(autoaccept, "party") ~= nil then
+        if autoaccept.party == true then
+            autoaccept.friends, autoaccept.guild = true, true
+        end
+        autoaccept.party = nil
     end
 
     local global = self.db.global

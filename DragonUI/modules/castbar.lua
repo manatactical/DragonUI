@@ -53,11 +53,14 @@ local CHANNEL_TICKS_DATA = {
     -- Priest
     { id = 15407, ticks = 3  },  -- Mind Flay
     { id = 605,   ticks = 8  },  -- Mind Control
+    { id = 48045, ticks = 5  },  -- Mind Sear
     { id = 47540, ticks = 2  },  -- Penance
     -- Mage
     { id = 10,    ticks = 8  },  -- Blizzard
     { id = 12051, ticks = 4  },  -- Evocation
     { id = 5143,  ticks = 5  },  -- Arcane Missiles
+    -- Hunter
+    { id = 1510,  ticks = 6  },  -- Volley
     -- Druid
     { id = 740,   ticks = 4  },  -- Tranquility
     { id = 16914, ticks = 10 },  -- Hurricane
@@ -1887,6 +1890,9 @@ function CastbarModule:RefreshCastbar(unitType)
     else
         ShowBlizzardCastbar(unitType)
         self:HideCastbar(unitType)
+        if unitType == "player" and addon.RelayoutGCD then
+            addon.RelayoutGCD()
+        end
         return
     end
     
@@ -2192,6 +2198,10 @@ function CastbarModule:RefreshCastbar(unitType)
     
     if cfg.text_mode then
         SetTextMode(unitType, cfg.text_mode)
+    end
+
+    if unitType == "player" and addon.RelayoutGCD then
+        addon.RelayoutGCD()
     end
 end
 
@@ -3060,6 +3070,11 @@ end
 -- Public API
 function addon.RefreshCastbar()
     CastbarModule:RefreshCastbar("player")
+end
+
+function addon.IsPlayerCastbarAtDefault()
+    local widget = addon.db and addon.db.profile.widgets and addon.db.profile.widgets.playerCastbar
+    return widget and IsPlayerCastbarAtDefault(widget) or false
 end
 
 function addon.RefreshTargetCastbar()

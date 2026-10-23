@@ -1,3 +1,5 @@
+-- Copyright (c) 2026 NeticSoul. Licensed under the MIT License; see LICENSE.
+
 --[[
 ================================================================================
 DragonUI - English Locale (Default)
@@ -25,6 +27,11 @@ L["Cannot toggle keybind mode during combat!"] = true
 L["Cannot move frames during combat!"] = true
 L["Cannot open options in combat."] = true
 L["Options panel not available. Try /reload."] = true
+
+-- Farm mode
+L["Farm mode enabled"] = true
+L["Farm mode disabled"] = true
+L["Minimap module not available."] = true
 
 -- Module availability
 L["Editor mode not available."] = true
@@ -55,6 +62,7 @@ L["/dragonui config - Open configuration"] = true
 L["/dragonui edit - Toggle editor mode (move UI elements)"] = true
 L["/dragonui reset - Reset all positions to defaults"] = true
 L["/dragonui status - Show module status"] = true
+L["/dragonui farm - Toggle farm mode (big minimap, chrome hidden)"] = true
 L["/dragonui kb - Toggle keybind mode"] = true
 L["/dragonui version - Show version info"] = true
 L["/dragonui help - Show this help"] = true
@@ -185,6 +193,18 @@ L["TotemBarOverlay"] = "Totem Bar"
 L["PlayerCastbar"] = "Castbar"
 L["TargetCastbar"] = "Target Castbar"
 L["FocusCastbar"] = "Focus Castbar"
+L["GCDAnchor"] = "GCD Indicator"
+L["Global Cooldown"] = "Global Cooldown"
+L["Enable GCD Indicator"] = "Enable GCD Indicator"
+L["GCD Height"] = "GCD Height"
+L["GCD Width"] = "GCD Width"
+L["GCD Color"] = "GCD Color"
+L["Always Show GCD Track"] = "Always Show GCD Track"
+L["GCD Style"] = "GCD Style"
+L["GCD Background"] = "GCD Background"
+L["Show GCD Spark"] = "Show GCD Spark"
+L["Flat"] = "Flat"
+L["Framed"] = "Framed"
 L["TooltipWidget"] = "Tooltip"
 L["Buff"] = true
 L["Debuffs"] = "Debuff"
@@ -440,9 +460,19 @@ L["Dark Mode"] = true
 L["Darken UI borders and chrome"] = true
 L["Item Quality"] = true
 L["Color item borders by quality in bags, character panel, bank, and merchant"] = true
+L["Character Item Counts"] = true
+L["Shows per-character bag, bank, and equipped item counts in item tooltips."] = true
+L["Bags: %d"] = true
+L["Bank: %d"] = true
+L["Equipped: %d"] = true
+L["Total: %d (%s)"] = true
+L["Automatic Equipment Comparison"] = true
+L["Compare equippable items with your equipped gear without holding Shift, including item links opened from chat."] = true
 L["Item Level"] = true
 L["Show item level on gear icons in bags, character panel, bank, and more"] = true
 L["Item Level: %d"] = true
+L["Repair Cost"] = true
+L["No Repairs Needed"] = true
 L["Unranked"] = true
 L["Key Binding"] = true
 L["LibKeyBound integration for intuitive keybinding"] = true
@@ -620,6 +650,9 @@ L["New Equipment Set"] = true
 L["Rename or change the icon"] = true
 L["Assign To:"] = true
 L["Panel settings"] = true
+L["Group Member Pins"] = true
+L["Class Icons"] = true
+L["Class Colors"] = true
 L["Background"] = true
 L["Stone"] = true
 L["Dark"] = true
@@ -690,6 +723,43 @@ L["Level Up Enhance"] = true
 L["Enhanced level-up notification with animated frame"] = true
 L["You've Reached"] = true
 L["Level %d"] = true
+L["Dual Talent Specialization"] = true
+L["Major Glyph Slot"] = true
+L["Minor Glyph Slot"] = true
+L["Feature Unlocked!"] = true
+L["Ready to Spend!"] = true
+L["New Ability!"] = true
+L["New Rank!"] = true
+L["New Battleground!"] = true
+L["New Dungeon!"] = true
+L["New Raid!"] = true
+L["Heroic Dungeons!"] = true
+L["%d New Ranks!"] = true
+L["%d New Raids!"] = true
+L["%d New Dungeons!"] = true
+L["%d New Battlegrounds!"] = true
+L["%d New Abilities!"] = true
+L["New feature unlocked:"] = true
+L["New ability available:"] = true
+L["New battleground unlocked:"] = true
+L["New dungeon unlocked:"] = true
+L["New raid unlocked:"] = true
+L["New heroic dungeons unlocked:"] = true
+L["Learn it from your class trainer."] = true
+L["Learned from a class quest."] = true
+L["Learn it from a riding trainer."] = true
+L["Talent Point"] = true
+L["%d Talent Points"] = true
+L["Pet Talent Point"] = true
+L["%s Has Reached"] = true
+L["%s has reached level %d!"] = true
+L["Show Unlocks"] = true
+L["Unlock Style"] = true
+L["One at a Time"] = true
+L["List"] = true
+L["Open the List Automatically"] = true
+L["Unlocks in Chat"] = true
+L["Pet Level-Up Banner"] = true
 
 -- ============================================================================
 -- LOW HP ALERT MODULE
@@ -701,14 +771,15 @@ L["Personal Resource Display"] = true
 L["PersonalResource"] = true
 L["Add Health and Resource below your Character."] = true
 L["Combo Points"] = true
-L["Combo points as orbs under the player frame and/or gems around the target portrait."] = true
+L["Combo points as orbs under the player frame and/or on the target frame."] = true
 L["ComboPoints"] = "Combo Points"
 L["DKRunes"] = "Death Knight Runes"
 L["Orb Style"] = true
 L["Hide When Empty"] = true
-L["Hide the orbs and the gems at 0 points instead of showing them empty."] = true
+L["Hide the orbs at 0 points instead of showing them empty."] = true
 L["Swing Timer"] = true
 L["Show a bar with the time left until each weapon's next swing."] = true
+L["Show a bar above the player cast bar that fills while the global cooldown runs."] = true
 L["SwingTimerMainHand"] = "Main Hand Swing Timer"
 L["SwingTimerOffHand"] = "Off Hand Swing Timer"
 L["SwingTimerRanged"] = "Ranged Swing Timer"
@@ -955,7 +1026,7 @@ L["Animated Effects"] = true
 L["Hide DragonUI Border"] = true
 L["Opacity"] = true
 L["Separate Weapon Enchants"] = true
-L["Show Aura Spell ID"] = true
+L["Show Spell IDs"] = true
 L["Buff Icon Scale"] = true
 L["Buffs Per Row"] = true
 L["Max Buff Rows"] = true
@@ -991,6 +1062,8 @@ L["Debuff Vertical Gap"] = true
 L["Debuff Attached Offset Y"] = true
 L["Preview Debuff Count"] = true
 L["Anchor to Cursor"] = true
+L["Cursor Anchor Offset X"] = true
+L["Cursor Anchor Offset Y"] = true
 L["Class-Colored Border"] = true
 L["Class-Colored Name"] = true
 L["Target of Target"] = true
@@ -1086,3 +1159,13 @@ L["Set Favorite"] = true
 L["Guaranteed chance of gaining %d skill ups"] = true
 L["High chance of gaining skill"] = true
 L["Low chance of gaining skill"] = true
+
+-- ============================================================================
+-- FLIGHT MAP & MAIL
+-- ============================================================================
+L["Flight Map"] = true
+L["Retail-style flight master map window chrome"] = true
+L["Mail"] = true
+L["Retail-style mail window with Open All button"] = true
+L["Open All"] = true
+L["Opening..."] = true
