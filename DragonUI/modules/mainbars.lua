@@ -308,11 +308,80 @@ local FORM_PAGE_CLAUSES = {
     ROGUE = "[bonusbar:1] 7; [bonusbar:2] 8;",
 }
 
+-- The same pages keyed by form spell for "Page by Form": classless heroes' forms leave GetBonusBarOffset at 0.
+local FORM_SPELL_PAGES = {
+    [2457] = 7, [71] = 8, [2458] = 9, -- Battle, Defensive, Berserker Stance
+    [768] = 7, [33891] = 8, [5487] = 9, [9634] = 9, [24858] = 10, -- Cat, Tree of Life, Bear, Dire Bear, Moonkin
+    [1784] = 7, [51713] = 8, -- Stealth, Shadow Dance
+    [15473] = 7, -- Shadowform
+}
+
+-- Paladin auras and death knight presences: not shapeshifts, so on a classless hero they stay up beside a stance.
+local AURA_FORM_SPELLS = { 465, 7294, 19746, 19876, 19888, 19891, 32223, 48266, 48263, 48265 }
+
+local function IsPageByForm()
+    local db = addon.db and addon.db.profile and addon.db.profile.mainbars
+    return db and db.page_by_form == true
+end
+
+-- Matched by name, as a stance slot's index shifts with the forms known and auras share the bar.
+local function ReadFormSlots()
+    local pageByName, auraByName = {}, {}
+    for spellID, page in pairs(FORM_SPELL_PAGES) do
+        local name = GetSpellInfo(spellID)
+        if name then pageByName[name] = page end
+    end
+    for _, spellID in ipairs(AURA_FORM_SPELLS) do
+        local name = GetSpellInfo(spellID)
+        if name then auraByName[name] = true end
+    end
+    local pages, auras = {}, {}
+    for index = 1, GetNumShapeshiftForms() do
+        local _, name = GetShapeshiftFormInfo(index)
+        pages[index] = name and pageByName[name] or false
+        auras[index] = name and auraByName[name] or false
+    end
+    return pages, auras
+end
+
+-- The one page every paging form below this slot shares, or nil when they differ or there are none.
+local function PageBelow(pages, slot)
+    local shared
+    for below = 1, slot - 1 do
+        local page = pages[below]
+        if page then
+            if shared and shared ~= page then return nil end
+            shared = page
+        end
+    end
+    return shared
+end
+
+local function GetFormPageClauses()
+    local pages, auras = ReadFormSlots()
+    local parts = {}
+    for index, page in ipairs(pages) do
+        -- [stance:N] reports the highest active slot, so an aura above the stance answers in its place.
+        if not page and auras[index] then page = PageBelow(pages, index) end
+        if page then parts[#parts + 1] = "[stance:" .. index .. "] " .. page .. ";" end
+    end
+    return table.concat(parts, " ")
+end
+
 local function GetMainBarPageCondition()
     local parts = { PAGE_CLAUSES_SHARED }
-    parts[#parts + 1] = FORM_PAGE_CLAUSES[class]
+    if IsPageByForm() then
+        parts[#parts + 1] = GetFormPageClauses()
+    else
+        parts[#parts + 1] = FORM_PAGE_CLAUSES[class]
+    end
     parts[#parts + 1] = "1"
     return table.concat(parts, " ")
+end
+
+local function RegisterMainBarPageDriver(mainBar)
+    MainbarsModule.pageCondition = GetMainBarPageCondition()
+    RegisterStateDriver(mainBar, "page", MainbarsModule.pageCondition)
 end
 
 -- Main bar pages are driven through ActionButton actionpage attributes.
@@ -530,7 +599,7 @@ local function SetupMainBarPageDriver(mainBar)
             handle:SetAttribute("actionpage", page)
         end
     ]])
-    RegisterStateDriver(mainBar, "page", GetMainBarPageCondition())
+    RegisterMainBarPageDriver(mainBar)
     MainbarsModule.stateDrivers.page = { frame = mainBar, state = 'page' }
     MainbarsModule.pageDriverInstalled = true
     MainbarsModule.pageDriverFrame = mainBar
@@ -549,7 +618,45 @@ local function RefreshMainBarPageState()
     local mainBar = MainbarsModule.pageDriverFrame
     if not mainBar then return end
 
-    RegisterStateDriver(mainBar, 'page', GetMainBarPageCondition())
+    RegisterMainBarPageDriver(mainBar)
+end
+
+-- Re-registers only when the condition text changed: the form list, the profile or "Page by Form".
+local function SyncMainBarPageCondition()
+    local mainBar = MainbarsModule.pageDriverFrame
+    if not mainBar or GetMainBarPageCondition() == MainbarsModule.pageCondition then return end
+    if InCombatLockdown() then
+        addon.CombatQueue:Add("mainbars_page_condition", SyncMainBarPageCondition)
+        return
+    end
+    RegisterMainBarPageDriver(mainBar)
+end
+addon.RefreshMainBarPaging = SyncMainBarPageCondition
+
+-- Out of combat every slot is readable, so page by the form actually up once the driver has had its pass.
+local function CorrectFormPage()
+    local mainBar = MainbarsModule.pageDriverFrame
+    if not mainBar or not IsPageByForm() or InCombatLockdown() then return end
+    local state = tonumber(mainBar:GetAttribute("state-page"))
+    -- Bar, possess and vehicle pages are exact; only the form clauses and the default can be fooled by an aura.
+    if state ~= 1 and not (state and state >= 7 and state <= 10) then return end
+    local page = 1
+    for index, formPage in ipairs((ReadFormSlots())) do
+        if formPage and select(3, GetShapeshiftFormInfo(index)) then page = formPage end
+    end
+    if ActionButton1:GetAttribute("actionpage") == page then return end
+    mainBar:SetAttribute("form-page", page)
+    mainBar:Execute([[
+        local page = self:GetAttribute("form-page")
+        for _, handle in ipairs(mainPageButtons) do
+            handle:SetAttribute("actionpage", page)
+        end
+    ]])
+end
+
+-- The state driver re-reads conditions on the frame after UPDATE_SHAPESHIFT_FORM, so wait past it.
+local function QueueFormPageCheck()
+    if IsPageByForm() then addon:After(0.1, CorrectFormPage) end
 end
 
 local DIVIDER_PIECES = { top = "dividerTop", mid = "dividerMid", bottom = "dividerBottom" }
@@ -1071,6 +1178,26 @@ local function GetExhaustionTickLevel(fill)
     return level
 end
 
+-- The 1137-texel strips ship as NAME (texels 0-1023) and NAME_r: past column 1024 d3d9ex draws nothing.
+local function CreateXpStrip(bar, parent, layer, file, inset)
+    local left = parent:CreateTexture(nil, layer)
+    left:SetTexture(addon._dir .. file)
+    left:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, inset)
+    left:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, -inset)
+    local right = parent:CreateTexture(nil, layer)
+    right:SetTexture(addon._dir .. file .. "_r")
+    right:SetTexCoord(0, 113 / 128, 0, 1)
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 0, 0)
+    right:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, -inset)
+    left.right = right
+    local function fit()
+        left:SetWidth(math.max(1, bar:GetWidth() * 1024 / 1137))
+    end
+    bar:HookScript("OnSizeChanged", fit)
+    fit()
+    return left
+end
+
 local function CreateDragonflightUIXPBar()
     if dfXpBar then return dfXpBar end
 
@@ -1083,10 +1210,7 @@ local function CreateDragonflightUIXPBar()
     f:SetFrameLevel(2)
 
     -- Background layer
-    f.Background = f:CreateTexture(nil, "BACKGROUND")
-    f.Background:SetAllPoints()
-    f.Background:SetTexture(addon._dir .. "XP\\Background")
-    f.Background:SetTexCoord(0, 0.55517578, 0, 1)
+    f.Background = CreateXpStrip(f, f, "BACKGROUND", "XP\\Background", 0)
 
     -- Rested XP background bar (shows the TOTAL rested range behind main fill)
     f.RestedBar = CreateFrame("StatusBar", nil, f)
@@ -1107,7 +1231,7 @@ local function CreateDragonflightUIXPBar()
     f.RestedBarMark:SetSize(markSizeX, markSizeY)
     f.RestedBarMark.Texture = f.RestedBarMark:CreateTexture(nil, "OVERLAY")
     f.RestedBarMark.Texture:SetTexture(addon._dir .. "XP\\uiexperiencebar")
-    f.RestedBarMark.Texture:SetTexCoord(1170 / 2048, 1192 / 2048, 201 / 256, 231 / 256)
+    f.RestedBarMark.Texture:SetTexCoord(596 / 1024, 618 / 1024, 457 / 1024, 487 / 1024)
     f.RestedBarMark.Texture:SetAllPoints()
 
     -- Main XP progress bar
@@ -1124,11 +1248,7 @@ local function CreateDragonflightUIXPBar()
     hooksecurefunc(f.Bar, "SetValue", CropStatusBarFill)
 
     -- Border overlay
-    f.Border = f.Bar:CreateTexture(nil, "OVERLAY")
-    f.Border:SetTexture(addon._dir .. "XP\\Overlay")
-    f.Border:SetTexCoord(0, 0.55517578, 0, 1)
-    f.Border:SetPoint("TOPLEFT", 0, 1)
-    f.Border:SetPoint("BOTTOMRIGHT", 0, -1)
+    f.Border = CreateXpStrip(f, f.Bar, "OVERLAY", "XP\\Overlay", 1)
 
     -- Text (shown on hover via HIGHLIGHT, or always via OVERLAY)
     f.Text = f.Bar:CreateFontString(nil, "HIGHLIGHT", "SystemFont_Outline_Small")
@@ -1168,10 +1288,7 @@ local function CreateDragonflightUIRepBar()
     f:SetFrameLevel(2)
 
     -- Background
-    f.Background = f:CreateTexture(nil, "BACKGROUND")
-    f.Background:SetAllPoints()
-    f.Background:SetTexture(addon._dir .. "XP\\Background")
-    f.Background:SetTexCoord(0, 0.55517578, 0, 1)
+    f.Background = CreateXpStrip(f, f, "BACKGROUND", "XP\\Background", 0)
 
     -- Main rep progress bar
     f.Bar = CreateFrame("StatusBar", nil, f)
@@ -1186,11 +1303,7 @@ local function CreateDragonflightUIRepBar()
     hooksecurefunc(f.Bar, "SetValue", CropStatusBarFill)
 
     -- Border overlay
-    f.Border = f.Bar:CreateTexture(nil, "OVERLAY")
-    f.Border:SetTexture(addon._dir .. "XP\\Overlay")
-    f.Border:SetTexCoord(0, 0.55517578, 0, 1)
-    f.Border:SetPoint("TOPLEFT", 0, 1)
-    f.Border:SetPoint("BOTTOMRIGHT", 0, -1)
+    f.Border = CreateXpStrip(f, f.Bar, "OVERLAY", "XP\\Overlay", 1)
 
     -- Text (hover by default)
     f.Text = f.Bar:CreateFontString(nil, "HIGHLIGHT", "SystemFont_Outline_Small")
@@ -1431,7 +1544,7 @@ local function ApplyRetailUIExpRepBarStyling()
                     region:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", -1, 0)
                     region:SetPoint("BOTTOMRIGHT", MainMenuExpBar, "BOTTOMRIGHT", 2, 0)
                     region:SetTexture(ExperienceBarAsset)
-                    region:SetTexCoord(0.00088878125 / 2048, 570 / 2048, 20 / 64, 29 / 64)
+                    region:SetTexCoord(0.00088878125 / 1024, 570 / 1024, 20 / 256, 29 / 256)
                     region:SetAlpha(1) -- RemoveBlizzardFrames sets alpha 0, must restore
                     region:Show()
                     bgFound = true
@@ -1461,7 +1574,7 @@ local function ApplyRetailUIExpRepBarStyling()
             borderTex:SetPoint("BOTTOMRIGHT", MainMenuExpBar, "BOTTOMRIGHT", 3, -6)
             borderTex:SetDrawLayer("OVERLAY", 1)
             borderTex:SetTexture(ExperienceBarAsset)
-            borderTex:SetTexCoord(1 / 2048, 572 / 2048, 1 / 64, 18 / 64)
+            borderTex:SetTexCoord(1 / 1024, 572 / 1024, 1 / 256, 18 / 256)
             borderTex:Show()
         end
 
@@ -1586,7 +1699,7 @@ local function ApplyRetailUIExpRepBarStyling()
             repBgTex:SetPoint("TOPLEFT", ReputationWatchStatusBar, "TOPLEFT", -1, 0)
             repBgTex:SetPoint("BOTTOMRIGHT", ReputationWatchStatusBar, "BOTTOMRIGHT", 2, 0)
             repBgTex:SetTexture(ExperienceBarAsset)
-            repBgTex:SetTexCoord(0.00088878125 / 2048, 570 / 2048, 20 / 64, 29 / 64)
+            repBgTex:SetTexCoord(0.00088878125 / 1024, 570 / 1024, 20 / 256, 29 / 256)
             repBgTex:SetAlpha(1) -- RemoveBlizzardFrames may set alpha 0, must restore
         end
 
@@ -1598,7 +1711,7 @@ local function ApplyRetailUIExpRepBarStyling()
             repBorder:SetPoint("BOTTOMRIGHT", ReputationWatchStatusBar, "BOTTOMRIGHT", 3, -7)
             repBorder:SetDrawLayer("OVERLAY", 1)
             repBorder:SetTexture(ExperienceBarAsset)
-            repBorder:SetTexCoord(1 / 2048, 572 / 2048, 1 / 64, 18 / 64)
+            repBorder:SetTexCoord(1 / 1024, 572 / 1024, 1 / 256, 18 / 256)
             repBorder:Show()
         end
 
@@ -1609,7 +1722,7 @@ local function ApplyRetailUIExpRepBarStyling()
             repBorder2:SetPoint("BOTTOMRIGHT", ReputationWatchStatusBar, "BOTTOMRIGHT", 3, -7)
             repBorder2:SetDrawLayer("OVERLAY", 1)
             repBorder2:SetTexture(ExperienceBarAsset)
-            repBorder2:SetTexCoord(1 / 2048, 572 / 2048, 1 / 64, 18 / 64)
+            repBorder2:SetTexCoord(1 / 1024, 572 / 1024, 1 / 256, 18 / 256)
             repBorder2:Show()
         end
 
@@ -1775,15 +1888,15 @@ local function UpdateBarPositions()
         -- Resize root; fixed UV so chrome stretches with SetSize (no UV∝width).
         if dfXpBar then
             dfXpBar:SetSize(barW, barH)
-            dfXpBar.Background:SetTexCoord(0, 0.55517578, 0, 1)
-            dfXpBar.Border:SetTexCoord(0, 0.55517578, 0, 1)
+            dfXpBar.Background:SetTexCoord(0, 1, 0, 1)
+            dfXpBar.Border:SetTexCoord(0, 1, 0, 1)
             dfXpBar:ClearAllPoints()
             dfXpBar:SetPoint("CENTER", addon.ActionBarFrames.xpbar, "CENTER", 0, 0)
         end
         if dfRepBar then
             dfRepBar:SetSize(barW, barH)
-            dfRepBar.Background:SetTexCoord(0, 0.55517578, 0, 1)
-            dfRepBar.Border:SetTexCoord(0, 0.55517578, 0, 1)
+            dfRepBar.Background:SetTexCoord(0, 1, 0, 1)
+            dfRepBar.Border:SetTexCoord(0, 1, 0, 1)
             dfRepBar:ClearAllPoints()
             dfRepBar:SetPoint("CENTER", addon.ActionBarFrames.repbar, "CENTER", 0, 0)
         end
@@ -2553,6 +2666,8 @@ local function InitializeMainbars()
     mainbarsEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
     mainbarsEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
     mainbarsEventFrame:RegisterEvent("PLAYER_LOGIN")
+    mainbarsEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+    mainbarsEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     mainbarsEventFrame:SetScript("OnEvent", function(self, event, unitOrAddon)
         if event == "PLAYER_ENTERING_WORLD" then
             RefreshMainBarPageState()
@@ -2607,6 +2722,7 @@ local function InitializeMainbars()
             self:UnregisterEvent("PLAYER_LOGIN")
 
         elseif event == "PLAYER_REGEN_ENABLED" then
+            QueueFormPageCheck()
             -- Reposition when combat ends - Execute immediately
             if IsModuleEnabled() then
                 ApplyActionBarPositions()
@@ -2628,6 +2744,15 @@ local function InitializeMainbars()
             if IsModuleEnabled() and unitOrAddon == "player" then
                 addon.UpdatePetBarVisibility()
             end
+
+        elseif event == "UPDATE_SHAPESHIFT_FORMS" then
+            if IsPageByForm() then
+                SyncMainBarPageCondition()
+                QueueFormPageCheck()
+            end
+
+        elseif event == "UPDATE_SHAPESHIFT_FORM" then
+            QueueFormPageCheck()
         end
     end)
 
@@ -3524,6 +3649,8 @@ function addon.RefreshMainbarsSystem()
     if addon.RefreshXpRepBars then
         addon.RefreshXpRepBars()
     end
+
+    SyncMainBarPageCondition()
 end
 
 -- Alias for compatibility

@@ -1146,9 +1146,11 @@ E.Register("party", { settings = Join({
     TextRows("party", R.partyText),
 }) })
 
-E.Register("boss", { settings = {
+E.Register("boss", { settings = Join({
     Slider(T("Scale"), "unitframe.boss.scale", 0.5, 2.0, 0.01, R.boss, { resize = true }),
-} })
+    Section(T("Text Display"), true, nil, PreviewTexts("boss")),
+    TextRows("boss", R.boss),
+}) })
 
 -- ============================================================================
 -- DEFINITIONS: CAST BARS
@@ -1594,6 +1596,7 @@ E.Register("minimap", { settings = {
         end }),
     Check(T("New Blip Style"), "minimap.blip_skin", R.minimap),
     Slider(T("Player Arrow Size"), "minimap.player_arrow_size", 8, 50, 1, R.minimap),
+    Slider(T("Addon Button Distance"), "minimap.addon_button_distance", -10, 20, 1, R.minimap),
     Section(T("Time & Calendar"), true),
     Check(T("Show Clock"), "minimap.clock", R.minimap),
     Slider(T("Clock Font Size"), "minimap.clock_font_size", 8, 20, 1, R.minimap),

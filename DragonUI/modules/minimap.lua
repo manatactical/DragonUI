@@ -1991,24 +1991,101 @@ local function CollectMinimapClickThroughFrames()
     return frames
 end
 
+-- ============================================================================
+-- ADDON BUTTON DISTANCE
+-- ============================================================================
+
+-- LibDBIcon r15, still shipped by most 3.3.5a addons, has no SetButtonRadius, so its SetPoint is hooked.
+local AddonButtonDistance = { hooked = {} }
+
+function AddonButtonDistance.Get()
+    -- Off while RestoreMinimapSystem hands the buttons back: it runs before `applied` clears.
+    if AddonButtonDistance.off then return 0 end
+    local settings = GetMinimapSettings()
+    return IsDragonUIMinimapControlling() and settings and tonumber(settings.addon_button_distance) or 0
+end
+
+-- The r15 library, or nil when a newer one (with SetButtonRadius) is loaded.
+function AddonButtonDistance.GetOldLibrary()
+    if not LibStub or not LibStub.GetLibrary then return nil end
+    local ok, libDBIcon = pcall(LibStub.GetLibrary, LibStub, "LibDBIcon-1.0", true)
+    if ok and libDBIcon and type(libDBIcon.objects) == "table" and type(libDBIcon.SetButtonRadius) ~= "function" then
+        return libDBIcon
+    end
+end
+
+-- Offsets are in the button's launcher scale; scaling both keeps r15's square-map clamp square.
+function AddonButtonDistance.OnSetPoint(button, point, relativeTo, relativePoint, x, y)
+    if AddonButtonDistance.busy or point ~= "CENTER" or relativeTo ~= Minimap or type(x) ~= "number" then return end
+    if button:GetParent() ~= Minimap then return end -- collected
+    -- The collector puts back the point it saved on the way in, which is already pushed out.
+    local placed = button.DragonUI_DistancePoint
+    if placed and math.abs(x - placed[1]) < 0.05 and math.abs(y - placed[2]) < 0.05 then return end
+    local distance = AddonButtonDistance.Get()
+    button.DragonUI_Distance = distance
+    if distance == 0 then
+        button.DragonUI_DistancePoint = nil
+        return
+    end
+    local orbit = LIBDBICON_ORBIT * button:GetScale()
+    local outward = (orbit + distance) / orbit
+    x, y = x * outward, y * outward
+    placed = placed or {}
+    placed[1], placed[2] = x, y
+    button.DragonUI_DistancePoint = placed
+    AddonButtonDistance.busy = true
+    button:SetPoint(point, relativeTo, relativePoint, x, y)
+    AddonButtonDistance.busy = nil
+end
+
+-- Collected buttons are the collector's to place; the library re-places the rest when their distance is stale.
+function AddonButtonDistance.ApplyToOldLibrary()
+    local libDBIcon = AddonButtonDistance.GetOldLibrary()
+    if not libDBIcon then return end
+    local distance = AddonButtonDistance.Get()
+    for name, button in pairs(libDBIcon.objects) do
+        if not AddonButtonDistance.hooked[button] then
+            AddonButtonDistance.hooked[button] = true
+            hooksecurefunc(button, "SetPoint", AddonButtonDistance.OnSetPoint)
+        end
+        if (button.DragonUI_Distance or 0) ~= distance and button:GetParent() == Minimap and libDBIcon.Refresh then
+            -- With its saved db, so a button its addon hides stays hidden (Refresh shows it otherwise).
+            libDBIcon:Refresh(name, button.db)
+        end
+    end
+end
+
 -- Compatibility: some addons ship LibDBIcon with a larger default radius,
 -- which pushes minimap addon buttons farther from the map edge.
 -- Keep this defensive and minimal: only clamp excessive defaults while DragonUI minimap is active.
 local function NormalizeLibDBIconRadius()
+    AddonButtonDistance.ApplyToOldLibrary()
+
     local libDBIcon = GetLibDBIcon()
     if not libDBIcon then return end
 
     local currentRadius = tonumber(libDBIcon.radius)
-    if not currentRadius or currentRadius <= 5 then return end
-
+    if not currentRadius then return end
     if MinimapModule.originalStates.LibDBIconRadius == nil then
+        if currentRadius <= 5 then return end
         MinimapModule.originalStates.LibDBIconRadius = currentRadius
+    elseif currentRadius <= 5 and currentRadius ~= AddonButtonDistance.radius then
+        return -- an addon picked its own small radius after ours
     end
 
-    libDBIcon:SetButtonRadius(-5)
+    local radius = -5 + AddonButtonDistance.Get()
+    if currentRadius ~= radius then
+        libDBIcon:SetButtonRadius(radius)
+    end
+    AddonButtonDistance.radius = radius
 end
 
 local function RestoreLibDBIconRadius()
+    -- r15 buttons: placed again with the distance off, so they go back to the library's own spot.
+    AddonButtonDistance.off = true
+    AddonButtonDistance.ApplyToOldLibrary()
+    AddonButtonDistance.off = nil
+
     local originalRadius = MinimapModule.originalStates.LibDBIconRadius
     if originalRadius == nil then return end
 
@@ -2978,6 +3055,45 @@ local function SyncMinimapVisibility()
 end
 MinimapModule.SyncMinimapVisibility = SyncMinimapVisibility
 
+-- Always on while editing: the client's minimap renderer breaks once the map is partly off screen.
+function MinimapModule:ApplyEditorClamp()
+    local mover = self.minimapFrame
+    if not mover then return end
+    if not self.editorActive then
+        mover:SetClampRectInsets(0, 0, 0, 0)
+        mover:SetClampedToScreen(false)
+        return
+    end
+
+    local moverLeft, moverRight = mover:GetLeft(), mover:GetRight()
+    local moverTop, moverBottom = mover:GetTop(), mover:GetBottom()
+    if not (moverLeft and moverRight and moverTop and moverBottom) then return end
+    local moverScale = mover:GetEffectiveScale()
+    local left, right, top, bottom
+    -- A top border faded out by Border Alpha 0 doesn't count; the zone text still can.
+    for _, frame in ipairs({ Minimap, MinimapBorderTop, MinimapZoneTextButton }) do
+        local shown = frame and frame:IsVisible() and frame:GetAlpha() > 0
+        local frameLeft, frameRight = shown and frame:GetLeft(), shown and frame:GetRight()
+        local frameTop, frameBottom = shown and frame:GetTop(), shown and frame:GetBottom()
+        if frameLeft and frameRight and frameTop and frameBottom then
+            -- Edges come back in each frame's own scaled units; a texture (the top border) has its parent's.
+            local scaled = frame.GetEffectiveScale and frame or frame:GetParent()
+            local ratio = scaled:GetEffectiveScale() / moverScale
+            frameLeft, frameRight = frameLeft * ratio, frameRight * ratio
+            frameTop, frameBottom = frameTop * ratio, frameBottom * ratio
+            left = left and math.min(left, frameLeft) or frameLeft
+            right = right and math.max(right, frameRight) or frameRight
+            top = top and math.max(top, frameTop) or frameTop
+            bottom = bottom and math.min(bottom, frameBottom) or frameBottom
+        end
+    end
+    if not left then return end
+
+    -- Positive left/bottom and negative right/top shrink the clamp rect toward the visible map.
+    mover:SetClampRectInsets(left - moverLeft, right - moverRight, top - moverTop, bottom - moverBottom)
+    mover:SetClampedToScreen(true)
+end
+
 function MinimapModule:InitializeMinimapSystem()
     -- Load TimeManager addon if not loaded
     if not IsAddOnLoaded('Blizzard_TimeManager') then
@@ -3005,16 +3121,15 @@ function MinimapModule:InitializeMinimapSystem()
         configPath = {"widgets", "minimap"},
         onShow = function()
             -- Match quest tracker behavior: clamp while editing.
-            -- Allow a small overflow so users can fine-tune near edges.
-            self.minimapFrame:SetClampedToScreen(true)
-            self.minimapFrame:SetClampRectInsets(20, -20, -20, -5)
+            self.editorActive = true
+            self:ApplyEditorClamp()
             -- Force full opacity while dragging so the user can actually see what they're moving.
             if addon.VisibilityFade then addon.VisibilityFade.Reset("minimap", 1) end
         end,
         onHide = function()
             -- Remove custom clamp settings after editor mode.
-            self.minimapFrame:SetClampRectInsets(0, 0, 0, 0)
-            self.minimapFrame:SetClampedToScreen(false)
+            self.editorActive = false
+            self:ApplyEditorClamp()
             self:UpdateWidgets() -- Apply new configuration on editor exit
             addon:RefreshMinimap()
         end,
@@ -3500,6 +3615,8 @@ function addon:RefreshMinimap()
         -- Also update tracking icon when settings change
         MinimapModule:UpdateTrackingIcon()
         MinimapModule.SyncMinimapVisibility()
+        -- Addon Button Distance (LibDBIcon radius, or the r15 hook).
+        NormalizeLibDBIconRadius()
 
         -- Refresh addon icon skinning
         local skinEnabled = addon.db and addon.db.profile and addon.db.profile.minimap
@@ -3520,6 +3637,9 @@ function addon:RefreshMinimap()
 
         -- Parks chrome this pass just created, e.g. the gear when the collector gets enabled.
         MinimapModule:ApplyFarmMode()
+
+        -- Scale, style and farm mode move the map inside its mover; refit the editor clamp to it.
+        if MinimapModule.editorActive then MinimapModule:ApplyEditorClamp() end
     end
 end
 
